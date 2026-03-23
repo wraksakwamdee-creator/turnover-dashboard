@@ -7,7 +7,7 @@ import {
   Edit2, Trash2, Save, X
 } from 'lucide-react';
 
-// --- โหลด Tailwind CSS อัตโนมัติ (แก้ไขปัญหา Plain Text บน CodeSandbox) ---
+// --- โหลด Tailwind CSS อัตโนมัติ ---
 if (typeof window !== 'undefined' && !document.getElementById('tailwind-script')) {
   const script = document.createElement('script');
   script.id = 'tailwind-script';
@@ -20,7 +20,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 
-// ใช้ Config จากโปรเจกต์ Firebase ของคุณเอง
 const firebaseConfig = {
   apiKey: "AIzaSyCz1G9X2IgcThyIPWDmcUDvcu583QhVYzQ",
   authDomain: "recruitment-and-turnover-7d589.firebaseapp.com",
@@ -33,15 +32,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// ตั้งชื่อ Collection หลักสำหรับเก็บข้อมูลบริษัท
 const companyDataId = 'company_data';
 
 // --- ข้อมูลเริ่มต้น ---
 const INITIAL_HEADCOUNT = 153; 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
-const REASON_OPTIONS = [
+
+// --- แยกตัวเลือกเหตุผลการลาออก ---
+const VOLUNTARY_REASONS = [
   "ได้งานใหม่ / ค่าตอบแทนดีกว่า",
   "กลับต่างจังหวัด / ภูมิลำเนา",
   "เปลี่ยนสายงาน",
@@ -49,11 +48,23 @@ const REASON_OPTIONS = [
   "ปัญหาสุขภาพ",
   "ดูแลครอบครัว",
   "เกษียณอายุ",
-  "ไม่ผ่านทดลองงาน",
   "อื่นๆ"
 ];
 
-const initialResignState = { name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', reason: REASON_OPTIONS[0], customReason: '', backfillStatus: 'Open' };
+const INVOLUNTARY_REASONS = [
+  "ไม่ผ่านทดลองงาน",
+  "ผลการปฏิบัติงานไม่ถึงเกณฑ์",
+  "ทุจริต / ทำผิดกฎระเบียบ",
+  "ปรับลดโครงสร้างองค์กร (Layoff)",
+  "อื่นๆ"
+];
+
+const getReasonOptions = (type) => type === 'Involuntary' ? INVOLUNTARY_REASONS : VOLUNTARY_REASONS;
+
+const initialResignState = { 
+  name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', 
+  reason: VOLUNTARY_REASONS[0], customReason: '', remarks: '', backfillStatus: 'Open' 
+};
 
 export default function RecruitmentDashboard() {
   const [user, setUser] = useState(null);
@@ -70,42 +81,29 @@ export default function RecruitmentDashboard() {
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
   
-  // สเตทสำหรับเช็คว่าโหลด CSS เสร็จหรือยัง
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // --- 1. จัดการการ Login (ยืนยันตัวตนก่อนดึงข้อมูล) ---
+  // --- 1. จัดการการ Login ---
   useEffect(() => {
-    // หน่วงเวลาเล็กน้อยให้หน้าเว็บพร้อมทำงาน
     const timer = setTimeout(() => setIsLoaded(true), 500);
-
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          try {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } catch (err) {
-            await signInAnonymously(auth);
-          }
+          try { await signInWithCustomToken(auth, __initial_auth_token); } 
+          catch (err) { await signInAnonymously(auth); }
         } else {
           await signInAnonymously(auth);
         }
-      } catch (error) {
-        console.error("Auth error:", error);
-      }
+      } catch (error) { console.error("Auth error:", error); }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
+    return () => { unsubscribe(); clearTimeout(timer); };
   }, []);
 
-  // --- 2. โหลดข้อมูลจาก Cloud (เปลี่ยนเป็น "โฟลเดอร์ส่วนกลาง" Public Data) ---
+  // --- 2. โหลดข้อมูลจาก Cloud ---
   useEffect(() => {
-    if (!user) return; // ต้องมี User ก่อนถึงจะดึงข้อมูลได้
-    
-    // ดึงข้อมูลคนลาออกจาก Public Data
+    if (!user) return;
     const resignationsRef = collection(db, companyDataId, 'public', 'resignations');
     const unsubResignations = onSnapshot(resignationsRef, (snapshot) => {
       const data = [];
@@ -113,7 +111,6 @@ export default function RecruitmentDashboard() {
       setResignations(data);
     }, (error) => console.error("Error fetching resignations: ", error));
 
-    // ดึงข้อมูลคนเข้ารับจาก Public Data
     const hiresRef = collection(db, companyDataId, 'public', 'hires');
     const unsubHires = onSnapshot(hiresRef, (snapshot) => {
       const data = [];
@@ -121,30 +118,20 @@ export default function RecruitmentDashboard() {
       setHires(data);
     }, (error) => console.error("Error fetching hires: ", error));
 
-    return () => {
-      unsubResignations();
-      unsubHires();
-    };
+    return () => { unsubResignations(); unsubHires(); };
   }, [user]);
 
   // --- Logic การคำนวณตามสูตร ---
   const dashboardData = useMemo(() => {
     let currentHC = INITIAL_HEADCOUNT;
-    let ytdTotalOut = 0;
-    let ytdVoluntary = 0;
-    let ytdInvoluntary = 0;
-    let ytdRegrettable = 0;
-    let ytdNonRegrettable = 0;
+    let ytdTotalOut = 0; let ytdVoluntary = 0; let ytdInvoluntary = 0; let ytdRegrettable = 0; let ytdNonRegrettable = 0;
 
     const monthlyStats = MONTHS.map(month => {
       const monthIndex = MONTHS.indexOf(month);
-      
       const ins = hires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
-      
       const outsThisMonth = resignations.filter(r => {
         if (!r.date) return false;
-        const rMonth = new Date(r.date).getMonth();
-        return rMonth === monthIndex;
+        return new Date(r.date).getMonth() === monthIndex;
       });
 
       const totalOut = outsThisMonth.length;
@@ -153,29 +140,14 @@ export default function RecruitmentDashboard() {
       const reg = outsThisMonth.filter(r => r.regrettable === 'Yes').length;
       const nonReg = outsThisMonth.filter(r => r.regrettable === 'No').length;
 
-      ytdTotalOut += totalOut;
-      ytdVoluntary += vol;
-      ytdInvoluntary += invol;
-      ytdRegrettable += reg;
-      ytdNonRegrettable += nonReg;
-
+      ytdTotalOut += totalOut; ytdVoluntary += vol; ytdInvoluntary += invol; ytdRegrettable += reg; ytdNonRegrettable += nonReg;
       const beginning = currentHC;
       const ending = beginning + ins - totalOut;
       const average = (beginning + ending) / 2;
-
       currentHC = ending;
 
       return {
-        month,
-        beginning,
-        ins,
-        totalOut,
-        ending,
-        average,
-        vol,
-        invol,
-        reg,
-        nonReg,
+        month, beginning, ins, totalOut, ending, average, vol, invol, reg, nonReg,
         turnoverRate: average > 0 ? Number(((totalOut / average) * 100).toFixed(2)) : 0,
         volRate: average > 0 ? Number(((vol / average) * 100).toFixed(2)) : 0,
         involRate: average > 0 ? Number(((invol / average) * 100).toFixed(2)) : 0,
@@ -187,14 +159,10 @@ export default function RecruitmentDashboard() {
     return {
       monthlyStats,
       ytd: {
-        endingHC: currentHC,
-        averageHC: ytdAverageHC,
-        totalOut: ytdTotalOut,
+        endingHC: currentHC, averageHC: ytdAverageHC, totalOut: ytdTotalOut,
         turnoverRate: ytdAverageHC > 0 ? ((ytdTotalOut / ytdAverageHC) * 100).toFixed(2) : 0,
-        voluntary: ytdVoluntary,
-        involuntary: ytdInvoluntary,
-        regrettable: ytdRegrettable,
-        nonRegrettable: ytdNonRegrettable
+        voluntary: ytdVoluntary, involuntary: ytdInvoluntary,
+        regrettable: ytdRegrettable, nonRegrettable: ytdNonRegrettable
       }
     };
   }, [resignations, hires]);
@@ -213,45 +181,36 @@ export default function RecruitmentDashboard() {
       counts[reasonKey] = (counts[reasonKey] || 0) + 1;
     });
     return Object.keys(counts).map((key, index) => ({ 
-      name: key, 
-      value: counts[key],
-      fill: COLORS[index % COLORS.length]
+      name: key, value: counts[key], fill: COLORS[index % COLORS.length]
     }));
   }, [resignations]);
 
   const departmentStats = useMemo(() => {
-    const counts = {};
-    let totalOut = 0;
+    const counts = {}; let totalOut = 0;
     resignations.forEach(r => {
       const deptKey = r.department || 'ไม่ระบุแผนก';
       counts[deptKey] = (counts[deptKey] || 0) + 1;
       totalOut++;
     });
     return Object.keys(counts)
-      .map(key => ({ 
-        department: key, 
-        count: counts[key],
-        percent: totalOut > 0 ? ((counts[key] / totalOut) * 100).toFixed(1) : 0
-      }))
+      .map(key => ({ department: key, count: counts[key], percent: totalOut > 0 ? ((counts[key] / totalOut) * 100).toFixed(1) : 0 }))
       .sort((a, b) => b.count - a.count);
   }, [resignations]);
 
-  // --- 3. ฟังก์ชันบันทึกข้อมูล (เซฟลง Public Data) ---
+  // --- 3. ฟังก์ชันบันทึกข้อมูล ---
   const handleAddResignation = async (e) => {
     e.preventDefault();
     if (!user || !newResign.name || !newResign.date) return;
     try {
       const finalReason = newResign.reason === 'อื่นๆ' ? newResign.customReason : newResign.reason;
       const resignDataToSave = { ...newResign, reason: finalReason };
-      delete resignDataToSave.customReason;
+      delete resignDataToSave.customReason; // ไม่ต้องเซฟช่อง customReason เปล่าๆ ขึ้น cloud
 
       const resignationsRef = collection(db, companyDataId, 'public', 'resignations');
       await addDoc(resignationsRef, resignDataToSave);
       setShowResignForm(false);
       setNewResign(initialResignState);
-    } catch (error) {
-      console.error("Error adding document: ", error);
-    }
+    } catch (error) { console.error("Error adding document: ", error); }
   };
 
   const handleAddHire = async (e) => {
@@ -260,10 +219,16 @@ export default function RecruitmentDashboard() {
     try {
       const hiresRef = collection(db, companyDataId, 'public', 'hires');
       await addDoc(hiresRef, newHire);
-      setShowHireForm(false);
-    } catch (error) {
-      console.error("Error adding document: ", error);
-    }
+      setNewHire({ ...newHire, count: 1 }); // รีเซ็ตแค่จำนวน
+    } catch (error) { console.error("Error adding document: ", error); }
+  };
+
+  const handleDeleteHire = async (id) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, companyDataId, 'public', 'hires', id);
+      await deleteDoc(docRef);
+    } catch (error) { console.error("Error deleting document: ", error); }
   };
 
   const updateBackfillStatus = async (id, newStatus) => {
@@ -271,18 +236,18 @@ export default function RecruitmentDashboard() {
     try {
       const docRef = doc(db, companyDataId, 'public', 'resignations', id);
       await updateDoc(docRef, { backfillStatus: newStatus });
-    } catch (error) {
-      console.error("Error updating document: ", error);
-    }
+    } catch (error) { console.error("Error updating document: ", error); }
   };
 
   const handleEditClick = (person) => {
     setEditingId(person.id);
-    const isPredefined = REASON_OPTIONS.includes(person.reason);
+    const options = getReasonOptions(person.type);
+    const isPredefined = options.includes(person.reason);
     setEditFormData({
       ...person,
       dropdownReason: isPredefined ? person.reason : 'อื่นๆ',
-      customReason: isPredefined ? '' : (person.reason || '')
+      customReason: isPredefined ? '' : (person.reason || ''),
+      remarks: person.remarks || '' // ดึงหมายเหตุเดิมมาแสดงถ้ามี
     });
   };
 
@@ -296,9 +261,7 @@ export default function RecruitmentDashboard() {
       const docRef = doc(db, companyDataId, 'public', 'resignations', editingId);
       await updateDoc(docRef, updateData);
       setEditingId(null);
-    } catch (error) {
-      console.error("Error updating document: ", error);
-    }
+    } catch (error) { console.error("Error updating document: ", error); }
   };
 
   const handleCancelEdit = () => {
@@ -312,17 +275,17 @@ export default function RecruitmentDashboard() {
       const docRef = doc(db, companyDataId, 'public', 'resignations', itemToDelete);
       await deleteDoc(docRef);
       setItemToDelete(null);
-    } catch (error) {
-      console.error("Error deleting document: ", error);
-    }
+    } catch (error) { console.error("Error deleting document: ", error); }
   };
 
   const totalHiresYTD = hires.reduce((sum, h) => sum + Number(h.count || 0), 0);
 
-  // ป้องกันกราฟพังระหว่างรอ CSS โหลด
   if (!isLoaded) {
     return <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif' }}>กำลังโหลดหน้าแดชบอร์ด...</div>;
   }
+
+  // ตัวแปรสำหรับเลือกแสดง Dropdown เหตุผลในหน้าฟอร์มเพิ่มคนออก
+  const currentReasonOptions = getReasonOptions(newResign.type);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
@@ -338,14 +301,14 @@ export default function RecruitmentDashboard() {
         </div>
         <div className="flex gap-2 w-full md:w-auto">
           <button 
-            onClick={() => setShowHireForm(!showHireForm)}
+            onClick={() => { setShowHireForm(!showHireForm); setShowResignForm(false); }}
             className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors"
           >
             <UserPlus className="h-4 w-4 text-green-600" />
             เพิ่มคนเข้า (In)
           </button>
           <button 
-            onClick={() => setShowResignForm(!showResignForm)}
+            onClick={() => { setShowResignForm(!showResignForm); setShowHireForm(false); }}
             className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition-colors"
           >
             <Plus className="h-4 w-4" />
@@ -374,7 +337,16 @@ export default function RecruitmentDashboard() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">ประเภท (Type)</label>
-                <select value={newResign.type} onChange={e => setNewResign({...newResign, type: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                <select 
+                  value={newResign.type} 
+                  onChange={e => {
+                    const newType = e.target.value;
+                    const newOptions = getReasonOptions(newType);
+                    // เปลี่ยนตัวเลือกเหตุผลเริ่มต้นให้ตรงกับ Type ทันที
+                    setNewResign({...newResign, type: newType, reason: newOptions[0], customReason: ''});
+                  }} 
+                  className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                >
                   <option value="Voluntary">ลาออกเอง (Voluntary)</option>
                   <option value="Involuntary">ให้ออก (Involuntary)</option>
                 </select>
@@ -386,43 +358,88 @@ export default function RecruitmentDashboard() {
                   <option value="No">ออกได้ (No)</option>
                 </select>
               </div>
-              <div className="lg:col-span-3">
+              <div className="lg:col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">เหตุผลที่ออก (Reason)</label>
                 <div className="flex gap-2">
                   <select value={newResign.reason} onChange={e => setNewResign({...newResign, reason: e.target.value})} className="w-1/2 p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
-                    {REASON_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    {currentReasonOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                   {newResign.reason === 'อื่นๆ' && (
                     <input type="text" value={newResign.customReason} onChange={e => setNewResign({...newResign, customReason: e.target.value})} className="w-1/2 p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="โปรดระบุเหตุผลอื่นๆ" />
                   )}
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">หมายเหตุ (สำหรับ HR)</label>
+                <input type="text" value={newResign.remarks} onChange={e => setNewResign({...newResign, remarks: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-yellow-50" placeholder="บันทึกข้อมูลเพิ่มเติม (ไม่บังคับ)" />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowResignForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">ยกเลิก</button>
-              <button type="submit" className="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 shadow-sm">บันทึกข้อมูล</button>
+              <button type="button" onClick={() => setShowResignForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">ปิดหน้าต่าง</button>
+              <button type="submit" className="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 shadow-sm">บันทึกคนออก</button>
             </div>
           </form>
         </div>
       )}
 
       {showHireForm && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า</h3>
-          <form onSubmit={handleAddHire} className="flex flex-wrap gap-4 items-end">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">เดือน</label>
-              <select value={newHire.month} onChange={e => setNewHire({...newHire, month: e.target.value})} className="w-32 p-2 border rounded-md text-sm bg-white">
-                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 flex flex-col md:flex-row gap-8">
+          {/* ส่วนเพิ่มคนเข้า */}
+          <div className="flex-1 border-b md:border-b-0 md:border-r border-gray-200 pb-6 md:pb-0 md:pr-6">
+            <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า (Add Hires)</h3>
+            <form onSubmit={handleAddHire} className="flex flex-col gap-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">เดือน</label>
+                  <select value={newHire.month} onChange={e => setNewHire({...newHire, month: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">จำนวนคน</label>
+                  <input type="number" min="1" required value={newHire.count} onChange={e => setNewHire({...newHire, count: e.target.value})} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 shadow-sm mt-2">บันทึกพนักงานใหม่</button>
+              <button type="button" onClick={() => setShowHireForm(false)} className="w-full py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">ปิดหน้าต่าง</button>
+            </form>
+          </div>
+
+          {/* ส่วนจัดการประวัติคนเข้า */}
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold mb-4 text-gray-800 bg-gray-100 p-2 rounded-md">ประวัติการเพิ่มข้อมูลรับเข้า (Manage)</h3>
+            <div className="max-h-[200px] overflow-y-auto border border-gray-100 rounded-md">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0">
+                  <tr>
+                    <th className="p-2 border-b">เดือน</th>
+                    <th className="p-2 border-b">จำนวน (คน)</th>
+                    <th className="p-2 border-b text-center">ลบ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hires.length > 0 ? (
+                    hires.map(h => (
+                      <tr key={h.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                        <td className="p-2 font-medium">{h.month}</td>
+                        <td className="p-2 text-green-600 font-semibold">+{h.count}</td>
+                        <td className="p-2 text-center">
+                          <button onClick={() => handleDeleteHire(h.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors" title="ลบข้อมูล">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="3" className="p-4 text-center text-xs text-gray-400">ยังไม่มีประวัติการรับเข้า</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">จำนวนรับเข้า (คน)</label>
-              <input type="number" min="1" required value={newHire.count} onChange={e => setNewHire({...newHire, count: e.target.value})} className="w-24 p-2 border rounded-md text-sm outline-none" />
-            </div>
-            <button type="submit" className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 shadow-sm">บันทึกพนักงานใหม่</button>
-            <button type="button" onClick={() => setShowHireForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">ยกเลิก</button>
-          </form>
+            <p className="text-[10px] text-gray-400 mt-2">* หากพิมพ์ตัวเลขผิด ให้กดลบรายการนั้นทิ้งแล้วเพิ่มใหม่ครับ</p>
+          </div>
         </div>
       )}
 
@@ -533,7 +550,7 @@ export default function RecruitmentDashboard() {
         </div>
       </div>
 
-      {/* Charts Section - ใส่ style height กันกราฟพัง */}
+      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
           <h3 className="text-lg font-semibold mb-6 text-gray-800">แนวโน้ม Turnover Rate รายเดือน (%)</h3>
@@ -681,7 +698,7 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+          <table className="w-full text-left border-collapse min-w-[900px]">
             <thead>
               <tr className="bg-white text-xs uppercase text-gray-500 tracking-wider">
                 <th className="p-4 font-medium border-b">ชื่อพนักงาน</th>
@@ -702,7 +719,15 @@ export default function RecruitmentDashboard() {
                     <td className="p-3"><input type="date" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.date} onChange={e => setEditFormData({...editFormData, date: e.target.value})} /></td>
                     <td className="p-3">
                       <div className="flex flex-col gap-2">
-                        <select className="p-1.5 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.type} onChange={e => setEditFormData({...editFormData, type: e.target.value})}>
+                        <select 
+                          className="p-1.5 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                          value={editFormData.type} 
+                          onChange={e => {
+                            const newType = e.target.value;
+                            const newOpts = getReasonOptions(newType);
+                            setEditFormData({...editFormData, type: newType, dropdownReason: newOpts[0], customReason: ''});
+                          }}
+                        >
                           <option value="Voluntary">Voluntary</option>
                           <option value="Involuntary">Involuntary</option>
                         </select>
@@ -715,11 +740,12 @@ export default function RecruitmentDashboard() {
                     <td className="p-3">
                       <div className="flex flex-col gap-1">
                         <select className="w-full p-1.5 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.dropdownReason} onChange={e => setEditFormData({...editFormData, dropdownReason: e.target.value})}>
-                          {REASON_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          {getReasonOptions(editFormData.type).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
                         {editFormData.dropdownReason === 'อื่นๆ' && (
                           <input type="text" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="ระบุเหตุผล" value={editFormData.customReason} onChange={e => setEditFormData({...editFormData, customReason: e.target.value})} />
                         )}
+                        <input type="text" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-yellow-50 mt-1" placeholder="หมายเหตุ (HR)" value={editFormData.remarks || ''} onChange={e => setEditFormData({...editFormData, remarks: e.target.value})} />
                       </div>
                     </td>
                     <td className="p-3 text-center">
@@ -757,7 +783,14 @@ export default function RecruitmentDashboard() {
                       </span>
                     </div>
                   </td>
-                  <td className="p-4 text-gray-600 truncate max-w-[150px]" title={person.reason}>{person.reason || '-'}</td>
+                  <td className="p-4 text-gray-600 max-w-[200px]">
+                    <div className="truncate font-medium text-gray-800" title={person.reason}>{person.reason || '-'}</div>
+                    {person.remarks && (
+                      <div className="text-[10px] text-gray-500 mt-1 leading-tight line-clamp-2" title={person.remarks}>
+                        หมายเหตุ: {person.remarks}
+                      </div>
+                    )}
+                  </td>
                   <td className="p-4 text-center">
                     <select 
                       value={person.backfillStatus}
