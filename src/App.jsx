@@ -313,6 +313,10 @@ export default function RecruitmentDashboard() {
   const totalHiresYTD = hires.reduce((sum, h) => sum + Number(h.count || 0), 0);
   const currentReasonOptions = getReasonOptions(newResign.type);
 
+  // สร้างวันที่ปัจจุบันแบบ Real-time (DD/MM/YYYY)
+  const today = new Date();
+  const formattedToday = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
   if (!isLoaded) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-sans">กำลังโหลดระบบ...</div>;
 
   // --- หน้าจอ Login ---
@@ -554,7 +558,10 @@ export default function RecruitmentDashboard() {
 
         <div className="bg-indigo-50 rounded-xl p-4 shadow-sm border border-indigo-100 flex flex-col justify-between">
           <div className="flex justify-between items-start">
-            <p className="text-xs font-semibold text-indigo-800">Ending HC (พนักงานสุทธิ)</p>
+            <div>
+              <p className="text-xs font-semibold text-indigo-800">Ending HC (พนักงานสุทธิ)</p>
+              <p className="text-[10px] text-indigo-600 mt-0.5 font-medium">ณ วันนี้ {formattedToday}</p>
+            </div>
             <CheckCircle className="h-4 w-4 text-indigo-600" />
           </div>
           <div className="mt-2">
