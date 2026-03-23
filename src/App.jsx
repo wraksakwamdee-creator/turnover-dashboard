@@ -41,6 +41,19 @@ const INITIAL_HEADCOUNT = 153;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const REASON_OPTIONS = [
+  "ได้งานใหม่ / ค่าตอบแทนดีกว่า",
+  "กลับต่างจังหวัด / ภูมิลำเนา",
+  "เปลี่ยนสายงาน",
+  "ศึกษาต่อ",
+  "ปัญหาสุขภาพ",
+  "ดูแลครอบครัว",
+  "เกษียณอายุ",
+  "ไม่ผ่านทดลองงาน",
+  "อื่นๆ"
+];
+
+const initialResignState = { name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', reason: REASON_OPTIONS[0], customReason: '', backfillStatus: 'Open' };
 
 export default function RecruitmentDashboard() {
   const [user, setUser] = useState(null);
@@ -48,7 +61,7 @@ export default function RecruitmentDashboard() {
   const [hires, setHires] = useState([]);
   
   const [showResignForm, setShowResignForm] = useState(false);
-  const [newResign, setNewResign] = useState({ name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', reason: '', backfillStatus: 'Open' });
+  const [newResign, setNewResign] = useState(initialResignState);
 
   const [showHireForm, setShowHireForm] = useState(false);
   const [newHire, setNewHire] = useState({ month: 'Jan', count: 1 });
@@ -186,13 +199,24 @@ export default function RecruitmentDashboard() {
     };
   }, [resignations, hires]);
 
+  const hiresStats = useMemo(() => {
+    return MONTHS.map(month => {
+      const count = hires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
+      return { month, count };
+    });
+  }, [hires]);
+
   const reasonStats = useMemo(() => {
     const counts = {};
     resignations.forEach(r => {
       const reasonKey = r.reason || 'ไม่ระบุเหตุผล';
       counts[reasonKey] = (counts[reasonKey] || 0) + 1;
     });
-    return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
+    return Object.keys(counts).map((key, index) => ({ 
+      name: key, 
+      value: counts[key],
+      fill: COLORS[index % COLORS.length]
+    }));
   }, [resignations]);
 
   const departmentStats = useMemo(() => {
@@ -217,10 +241,14 @@ export default function RecruitmentDashboard() {
     e.preventDefault();
     if (!user || !newResign.name || !newResign.date) return;
     try {
+      const finalReason = newResign.reason === 'อื่นๆ' ? newResign.customReason : newResign.reason;
+      const resignDataToSave = { ...newResign, reason: finalReason };
+      delete resignDataToSave.customReason;
+
       const resignationsRef = collection(db, companyDataId, 'public', 'resignations');
-      await addDoc(resignationsRef, newResign);
+      await addDoc(resignationsRef, resignDataToSave);
       setShowResignForm(false);
-      setNewResign({ name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', reason: '', backfillStatus: 'Open' });
+      setNewResign(initialResignState);
     } catch (error) {
       console.error("Error adding document: ", error);
     }
@@ -250,13 +278,21 @@ export default function RecruitmentDashboard() {
 
   const handleEditClick = (person) => {
     setEditingId(person.id);
-    setEditFormData(person);
+    const isPredefined = REASON_OPTIONS.includes(person.reason);
+    setEditFormData({
+      ...person,
+      dropdownReason: isPredefined ? person.reason : 'อื่นๆ',
+      customReason: isPredefined ? '' : (person.reason || '')
+    });
   };
 
   const handleSaveEdit = async () => {
     if (!user || !editingId) return;
     try {
-      const { id, ...updateData } = editFormData;
+      const finalReason = editFormData.dropdownReason === 'อื่นๆ' ? editFormData.customReason : editFormData.dropdownReason;
+      const { id, dropdownReason, customReason, ...updateData } = editFormData;
+      updateData.reason = finalReason;
+
       const docRef = doc(db, companyDataId, 'public', 'resignations', editingId);
       await updateDoc(docRef, updateData);
       setEditingId(null);
@@ -352,7 +388,14 @@ export default function RecruitmentDashboard() {
               </div>
               <div className="lg:col-span-3">
                 <label className="block text-xs font-medium text-gray-600 mb-1">เหตุผลที่ออก (Reason)</label>
-                <input type="text" value={newResign.reason} onChange={e => setNewResign({...newResign, reason: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="เช่น ได้งานใหม่, กลับต่างจังหวัด" />
+                <div className="flex gap-2">
+                  <select value={newResign.reason} onChange={e => setNewResign({...newResign, reason: e.target.value})} className="w-1/2 p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                    {REASON_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                  {newResign.reason === 'อื่นๆ' && (
+                    <input type="text" value={newResign.customReason} onChange={e => setNewResign({...newResign, customReason: e.target.value})} className="w-1/2 p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="โปรดระบุเหตุผลอื่นๆ" />
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -514,6 +557,39 @@ export default function RecruitmentDashboard() {
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
+          <h3 className="text-lg font-semibold mb-6 text-gray-800">จำนวนพนักงานรับเข้าต่อเดือน (Hires)</h3>
+          <div style={{ width: '100%', height: 300, minHeight: 300 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={hiresStats} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} allowDecimals={false} />
+                <RechartsTooltip 
+                  cursor={{ fill: '#F3F4F6' }}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value) => [`${value} คน`, 'จำนวนรับเข้า']}
+                />
+                <Bar dataKey="count" name="จำนวนรับเข้า" radius={[4, 4, 0, 0]} fill="#10B981">
+                  <LabelList 
+                    dataKey="count" 
+                    position="top" 
+                    content={(props) => {
+                      const { x, y, width, value } = props;
+                      if (value === 0) return null;
+                      return (
+                        <text x={x + width / 2} y={y - 8} fill="#10B981" textAnchor="middle" fontSize="11" fontWeight="600">
+                          +{value}
+                        </text>
+                      );
+                    }} 
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
           <h3 className="text-lg font-semibold mb-6 text-gray-800">จำนวนคนลาออกแยกตามแผนก</h3>
           <div style={{ width: '100%', height: 300, minHeight: 300 }}>
             {departmentStats.length > 0 ? (
@@ -555,32 +631,34 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-2">
           <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนเหตุผลการลาออก</h3>
-          <div style={{ width: '100%', height: 300, minHeight: 300 }}>
+          <div className="flex justify-center items-center w-full h-[300px]">
             {reasonStats.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-                  <Pie
-                    data={reasonStats}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={75}
-                    paddingAngle={5}
-                    dataKey="value"
-                    labelLine={true}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
-                    style={{ fontSize: '11px', fontWeight: '500', fill: '#4B5563' }}
-                  >
-                    {reasonStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend iconType="circle" layout="vertical" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="w-full max-w-[600px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
+                    <Pie
+                      data={reasonStats}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={75}
+                      paddingAngle={5}
+                      dataKey="value"
+                      labelLine={true}
+                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`}
+                      style={{ fontSize: '11px', fontWeight: '500' }}
+                    >
+                      {reasonStats.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <Legend iconType="circle" layout="vertical" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
                 <p className="text-sm">ยังไม่มีข้อมูลการลาออก</p>
@@ -634,7 +712,16 @@ export default function RecruitmentDashboard() {
                         </select>
                       </div>
                     </td>
-                    <td className="p-3"><input type="text" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.reason} onChange={e => setEditFormData({...editFormData, reason: e.target.value})} /></td>
+                    <td className="p-3">
+                      <div className="flex flex-col gap-1">
+                        <select className="w-full p-1.5 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.dropdownReason} onChange={e => setEditFormData({...editFormData, dropdownReason: e.target.value})}>
+                          {REASON_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                        {editFormData.dropdownReason === 'อื่นๆ' && (
+                          <input type="text" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="ระบุเหตุผล" value={editFormData.customReason} onChange={e => setEditFormData({...editFormData, customReason: e.target.value})} />
+                        )}
+                      </div>
+                    </td>
                     <td className="p-3 text-center">
                       <select value={editFormData.backfillStatus} onChange={e => setEditFormData({...editFormData, backfillStatus: e.target.value})} className="text-xs font-semibold rounded-md px-3 py-2 border border-gray-300 outline-none w-32 text-center bg-white focus:ring-2 focus:ring-indigo-500">
                         <option value="Open">เปิดรับ (Open)</option>
