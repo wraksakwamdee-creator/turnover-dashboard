@@ -38,6 +38,7 @@ const companyDataId = 'company_data';
 const INITIAL_HEADCOUNT = 153; 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const TENURE_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']; // แดง (เสี่ยง), เหลือง, ฟ้า, เขียว (อยู่นาน)
 
 // --- แยกตัวเลือกเหตุผลการลาออก ---
 const VOLUNTARY_REASONS = [
@@ -61,9 +62,31 @@ const INVOLUNTARY_REASONS = [
 
 const getReasonOptions = (type) => type === 'Involuntary' ? INVOLUNTARY_REASONS : VOLUNTARY_REASONS;
 
+// ฟังก์ชันช่วยคำนวณอายุงาน
+const getTenureCategory = (joinDate, resignDate) => {
+  if (!joinDate || !resignDate) return 'ไม่ระบุ';
+  const start = new Date(joinDate);
+  const end = new Date(resignDate);
+  if (end < start) return 'ไม่ระบุ';
+  const diffYears = (end - start) / (1000 * 60 * 60 * 24 * 365.25);
+  if (diffYears < 1) return '< 1 ปี';
+  if (diffYears <= 3) return '1-3 ปี';
+  if (diffYears <= 5) return '3-5 ปี';
+  return '> 5 ปี';
+};
+
+// ฟังก์ชันช่วยคำนวณเวลาหาคนแทน (Time to Fill)
+const getTimeToFill = (resignDate, hiredDate) => {
+  if (!resignDate || !hiredDate) return null;
+  const start = new Date(resignDate);
+  const end = new Date(hiredDate);
+  const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 ? diffDays : 0;
+};
+
 const initialResignState = { 
-  name: '', department: '', date: '', type: 'Voluntary', regrettable: 'Yes', 
-  reason: VOLUNTARY_REASONS[0], customReason: '', remarks: '', backfillStatus: 'Open' 
+  name: '', department: '', joinDate: '', date: '', type: 'Voluntary', regrettable: 'Yes', 
+  reason: VOLUNTARY_REASONS[0], customReason: '', remarks: '', backfillStatus: 'Open', hiredDate: '' 
 };
 
 export default function RecruitmentDashboard() {
@@ -81,9 +104,7 @@ export default function RecruitmentDashboard() {
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
   
-  // State สำหรับช่องค้นหา
   const [searchTerm, setSearchTerm] = useState('');
-  
   const [isLoaded, setIsLoaded] = useState(false);
 
   // --- 1. จัดการการ Login ---
@@ -200,6 +221,25 @@ export default function RecruitmentDashboard() {
       .sort((a, b) => b.count - a.count);
   }, [resignations]);
 
+  // ประมวลผลข้อมูลกราฟอายุงาน
+  const tenureStats = useMemo(() => {
+    const counts = { '< 1 ปี': 0, '1-3 ปี': 0, '3-5 ปี': 0, '> 5 ปี': 0 };
+    let totalOut = 0;
+    resignations.forEach(r => {
+      const cat = getTenureCategory(r.joinDate, r.date);
+      if (counts[cat] !== undefined) {
+        counts[cat]++;
+        totalOut++;
+      }
+    });
+    return Object.keys(counts).map((key, index) => ({
+      tenure: key,
+      count: counts[key],
+      percent: totalOut > 0 ? ((counts[key] / totalOut) * 100).toFixed(1) : 0,
+      fill: TENURE_COLORS[index]
+    }));
+  }, [resignations]);
+
   // --- 3. ฟังก์ชันบันทึกข้อมูล ---
   const handleAddResignation = async (e) => {
     e.preventDefault();
@@ -207,7 +247,7 @@ export default function RecruitmentDashboard() {
     try {
       const finalReason = newResign.reason === 'อื่นๆ' ? newResign.customReason : newResign.reason;
       const resignDataToSave = { ...newResign, reason: finalReason };
-      delete resignDataToSave.customReason; // ไม่ต้องเซฟช่อง customReason เปล่าๆ ขึ้น cloud
+      delete resignDataToSave.customReason;
 
       const resignationsRef = collection(db, companyDataId, 'public', 'resignations');
       await addDoc(resignationsRef, resignDataToSave);
@@ -222,7 +262,7 @@ export default function RecruitmentDashboard() {
     try {
       const hiresRef = collection(db, companyDataId, 'public', 'hires');
       await addDoc(hiresRef, newHire);
-      setNewHire({ ...newHire, count: 1 }); // รีเซ็ตแค่จำนวน
+      setNewHire({ ...newHire, count: 1 });
     } catch (error) { console.error("Error adding document: ", error); }
   };
 
@@ -234,11 +274,18 @@ export default function RecruitmentDashboard() {
     } catch (error) { console.error("Error deleting document: ", error); }
   };
 
-  const updateBackfillStatus = async (id, newStatus) => {
+  // อัปเดตสถานะและคำนวณ Time-to-Fill ให้อัตโนมัติเมื่อเลือก 'Hired'
+  const handleStatusChange = async (person, newStatus) => {
     if (!user) return;
     try {
-      const docRef = doc(db, companyDataId, 'public', 'resignations', id);
-      await updateDoc(docRef, { backfillStatus: newStatus });
+      const docRef = doc(db, companyDataId, 'public', 'resignations', person.id);
+      const updateData = { backfillStatus: newStatus };
+      if (newStatus === 'Hired' && !person.hiredDate) {
+        updateData.hiredDate = new Date().toISOString().split('T')[0]; // วันนี้
+      } else if (newStatus !== 'Hired') {
+        updateData.hiredDate = ''; // เคลียร์วันที่ได้คนออกถ้าเปลี่ยนเป็นสถานะอื่น
+      }
+      await updateDoc(docRef, updateData);
     } catch (error) { console.error("Error updating document: ", error); }
   };
 
@@ -250,7 +297,9 @@ export default function RecruitmentDashboard() {
       ...person,
       dropdownReason: isPredefined ? person.reason : 'อื่นๆ',
       customReason: isPredefined ? '' : (person.reason || ''),
-      remarks: person.remarks || '' // ดึงหมายเหตุเดิมมาแสดงถ้ามี
+      remarks: person.remarks || '',
+      joinDate: person.joinDate || '',
+      hiredDate: person.hiredDate || ''
     });
   };
 
@@ -260,6 +309,11 @@ export default function RecruitmentDashboard() {
       const finalReason = editFormData.dropdownReason === 'อื่นๆ' ? editFormData.customReason : editFormData.dropdownReason;
       const { id, dropdownReason, customReason, ...updateData } = editFormData;
       updateData.reason = finalReason;
+      
+      // ล้าง hiredDate ถ้าสถานะไม่ใช่ Hired
+      if (updateData.backfillStatus !== 'Hired') {
+        updateData.hiredDate = '';
+      }
 
       const docRef = doc(db, companyDataId, 'public', 'resignations', editingId);
       await updateDoc(docRef, updateData);
@@ -281,7 +335,6 @@ export default function RecruitmentDashboard() {
     } catch (error) { console.error("Error deleting document: ", error); }
   };
 
-  // ฟังก์ชันสำหรับการกรองข้อมูล (Search Filter)
   const filteredResignations = useMemo(() => {
     if (!searchTerm) return resignations;
     const term = searchTerm.toLowerCase();
@@ -291,32 +344,32 @@ export default function RecruitmentDashboard() {
     );
   }, [resignations, searchTerm]);
 
-  // ฟังก์ชันสำหรับ Export ข้อมูลเป็นไฟล์ CSV
+  // อัปเดตการดึงข้อมูล CSV เพื่อรวมอายุงาน และ Time-to-fill
   const handleExportCSV = () => {
     if (resignations.length === 0) return;
 
-    // กำหนดหัวคอลัมน์
-    const headers = ['ชื่อพนักงาน', 'แผนก', 'วันที่ลาออก', 'ประเภท', 'ผลกระทบ', 'เหตุผล', 'หมายเหตุ', 'สถานะการหาคนแทน'];
+    const headers = ['ชื่อพนักงาน', 'แผนก', 'วันที่เริ่มงาน', 'วันที่ลาออก', 'อายุงาน', 'ประเภท', 'ผลกระทบ', 'เหตุผล', 'หมายเหตุ', 'สถานะการหาคนแทน', 'วันที่ได้คน', 'Time-to-Fill (วัน)'];
 
-    // จัดเตรียมข้อมูล
     const csvData = resignations.map(r => [
       r.name || '',
       r.department || '-',
+      r.joinDate || '-',
       r.date || '',
+      getTenureCategory(r.joinDate, r.date),
       r.type || '',
       r.regrettable === 'Yes' ? 'Regrettable' : 'Non-Regret',
       r.reason || '-',
       r.remarks || '-',
-      r.backfillStatus || ''
+      r.backfillStatus || '',
+      r.hiredDate || '-',
+      r.backfillStatus === 'Hired' && r.hiredDate ? getTimeToFill(r.date, r.hiredDate) : '-'
     ]);
 
-    // ประกอบข้อมูลเข้าด้วยกันและจัดการเครื่องหมายคอมม่าในข้อความ
     const csvContent = [
       headers.join(','),
       ...csvData.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    // สร้างไฟล์และดาวน์โหลด (ใส่ \uFEFF เพื่อให้ Excel อ่านภาษาไทยได้ถูกต้อง)
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -333,7 +386,6 @@ export default function RecruitmentDashboard() {
     return <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif' }}>กำลังโหลดหน้าแดชบอร์ด...</div>;
   }
 
-  // ตัวแปรสำหรับเลือกแสดง Dropdown เหตุผลในหน้าฟอร์มเพิ่มคนออก
   const currentReasonOptions = getReasonOptions(newResign.type);
 
   return (
@@ -371,10 +423,14 @@ export default function RecruitmentDashboard() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
           <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">แบบฟอร์มบันทึกพนักงานลาออก</h3>
           <form onSubmit={handleAddResignation} className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="lg:col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">ชื่อ-นามสกุล</label>
                 <input type="text" required value={newResign.name} onChange={e => setNewResign({...newResign, name: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="ระบุชื่อพนักงาน" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">วันที่เริ่มงาน (Join Date)</label>
+                <input type="date" value={newResign.joinDate} onChange={e => setNewResign({...newResign, joinDate: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">วันที่ออก (Effective Date)</label>
@@ -391,7 +447,6 @@ export default function RecruitmentDashboard() {
                   onChange={e => {
                     const newType = e.target.value;
                     const newOptions = getReasonOptions(newType);
-                    // เปลี่ยนตัวเลือกเหตุผลเริ่มต้นให้ตรงกับ Type ทันที
                     setNewResign({...newResign, type: newType, reason: newOptions[0], customReason: ''});
                   }} 
                   className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
@@ -407,6 +462,13 @@ export default function RecruitmentDashboard() {
                   <option value="No">ออกได้ (No)</option>
                 </select>
               </div>
+              <div className="lg:col-span-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">สถานะหาคนแทน</label>
+                <select value={newResign.backfillStatus} onChange={e => setNewResign({...newResign, backfillStatus: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                  <option value="Open">เปิดรับ (Open)</option>
+                  <option value="No Backfill">ยุบตำแหน่ง</option>
+                </select>
+              </div>
               <div className="lg:col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">เหตุผลที่ออก (Reason)</label>
                 <div className="flex gap-2">
@@ -418,7 +480,7 @@ export default function RecruitmentDashboard() {
                   )}
                 </div>
               </div>
-              <div>
+              <div className="lg:col-span-2">
                 <label className="block text-xs font-medium text-gray-600 mb-1">หมายเหตุ (สำหรับ HR)</label>
                 <input type="text" value={newResign.remarks} onChange={e => setNewResign({...newResign, remarks: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-yellow-50" placeholder="บันทึกข้อมูลเพิ่มเติม (ไม่บังคับ)" />
               </div>
@@ -433,7 +495,6 @@ export default function RecruitmentDashboard() {
 
       {showHireForm && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 flex flex-col md:flex-row gap-8">
-          {/* ส่วนเพิ่มคนเข้า */}
           <div className="flex-1 border-b md:border-b-0 md:border-r border-gray-200 pb-6 md:pb-0 md:pr-6">
             <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า (Add Hires)</h3>
             <form onSubmit={handleAddHire} className="flex flex-col gap-4">
@@ -454,7 +515,6 @@ export default function RecruitmentDashboard() {
             </form>
           </div>
 
-          {/* ส่วนจัดการประวัติคนเข้า */}
           <div className="flex-1">
             <h3 className="text-sm font-semibold mb-4 text-gray-800 bg-gray-100 p-2 rounded-md">ประวัติการเพิ่มข้อมูลรับเข้า (Manage)</h3>
             <div className="max-h-[200px] overflow-y-auto border border-gray-100 rounded-md">
@@ -487,7 +547,6 @@ export default function RecruitmentDashboard() {
                 </tbody>
               </table>
             </div>
-            <p className="text-[10px] text-gray-400 mt-2">* หากพิมพ์ตัวเลขผิด ให้กดลบรายการนั้นทิ้งแล้วเพิ่มใหม่ครับ</p>
           </div>
         </div>
       )}
@@ -697,7 +756,51 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-2">
+        {/* กราฟใหม่: สัดส่วนอายุงานก่อนลาออก */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
+          <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนอายุงานก่อนลาออก (Tenure)</h3>
+          <div style={{ width: '100%', height: 300, minHeight: 300 }}>
+            {tenureStats.some(s => s.count > 0) ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={tenureStats} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="tenure" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} allowDecimals={false} />
+                  <RechartsTooltip 
+                    cursor={{ fill: '#F3F4F6' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value) => [`${value} คน`, 'จำนวนลาออก']}
+                  />
+                  <Bar dataKey="count" name="จำนวนลาออก" radius={[4, 4, 0, 0]}>
+                    <LabelList 
+                      dataKey="count" 
+                      position="top" 
+                      content={(props) => {
+                        const { x, y, width, value, index } = props;
+                        if (value === 0) return null;
+                        const percent = tenureStats[index]?.percent;
+                        return (
+                          <text x={x + width / 2} y={y - 8} fill="#6B7280" textAnchor="middle" fontSize="11" fontWeight="600">
+                            {value} คน ({percent}%)
+                          </text>
+                        );
+                      }} 
+                    />
+                    {tenureStats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                <p className="text-sm">ยังไม่มีข้อมูลวันที่เริ่มงาน</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
           <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนเหตุผลการลาออก</h3>
           <div className="flex justify-center items-center w-full h-[300px]">
             {reasonStats.length > 0 ? (
@@ -763,12 +866,12 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[900px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-white text-xs uppercase text-gray-500 tracking-wider">
                 <th className="p-4 font-medium border-b">ชื่อพนักงาน</th>
                 <th className="p-4 font-medium border-b">แผนก</th>
-                <th className="p-4 font-medium border-b">วันที่ลาออก</th>
+                <th className="p-4 font-medium border-b">อายุงาน (Tenure)</th>
                 <th className="p-4 font-medium border-b">ประเภท / Impact</th>
                 <th className="p-4 font-medium border-b">เหตุผล</th>
                 <th className="p-4 font-medium border-b text-center">สถานะการหาคนแทน</th>
@@ -781,7 +884,12 @@ export default function RecruitmentDashboard() {
                   <tr key={person.id} className="bg-indigo-50/30">
                     <td className="p-3"><input type="text" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></td>
                     <td className="p-3"><input type="text" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.department} onChange={e => setEditFormData({...editFormData, department: e.target.value})} /></td>
-                    <td className="p-3"><input type="date" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.date} onChange={e => setEditFormData({...editFormData, date: e.target.value})} /></td>
+                    <td className="p-3">
+                      <div className="flex flex-col gap-1">
+                        <input type="date" title="เริ่มงาน" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.joinDate} onChange={e => setEditFormData({...editFormData, joinDate: e.target.value})} />
+                        <input type="date" title="ลาออก" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.date} onChange={e => setEditFormData({...editFormData, date: e.target.value})} />
+                      </div>
+                    </td>
                     <td className="p-3">
                       <div className="flex flex-col gap-2">
                         <select 
@@ -814,12 +922,17 @@ export default function RecruitmentDashboard() {
                       </div>
                     </td>
                     <td className="p-3 text-center">
-                      <select value={editFormData.backfillStatus} onChange={e => setEditFormData({...editFormData, backfillStatus: e.target.value})} className="text-xs font-semibold rounded-md px-3 py-2 border border-gray-300 outline-none w-32 text-center bg-white focus:ring-2 focus:ring-indigo-500">
-                        <option value="Open">เปิดรับ (Open)</option>
-                        <option value="In Progress">กำลังหา (In Progress)</option>
-                        <option value="Hired">ได้คนแล้ว (Hired)</option>
-                        <option value="No Backfill">ยุบตำแหน่ง</option>
-                      </select>
+                      <div className="flex flex-col gap-1">
+                        <select value={editFormData.backfillStatus} onChange={e => setEditFormData({...editFormData, backfillStatus: e.target.value})} className="text-xs font-semibold rounded-md px-3 py-1.5 border border-gray-300 outline-none w-full text-center bg-white focus:ring-2 focus:ring-indigo-500">
+                          <option value="Open">เปิดรับ (Open)</option>
+                          <option value="In Progress">กำลังหา (In Progress)</option>
+                          <option value="Hired">ได้คนแล้ว (Hired)</option>
+                          <option value="No Backfill">ยุบตำแหน่ง</option>
+                        </select>
+                        {editFormData.backfillStatus === 'Hired' && (
+                          <input type="date" title="วันที่รับเข้า" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.hiredDate || ''} onChange={e => setEditFormData({...editFormData, hiredDate: e.target.value})} />
+                        )}
+                      </div>
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
@@ -837,7 +950,13 @@ export default function RecruitmentDashboard() {
                     </div>
                   </td>
                   <td className="p-4 text-gray-600">{person.department}</td>
-                  <td className="p-4 text-gray-600">{person.date}</td>
+                  <td className="p-4 text-gray-600">
+                    <div className="font-medium text-gray-800">ออก: {person.date}</div>
+                    {person.joinDate && <div className="text-[10px] text-gray-500">เริ่ม: {person.joinDate}</div>}
+                    {person.joinDate && person.date && (
+                      <div className="text-[10px] font-bold text-indigo-600 mt-0.5">อายุงาน: {getTenureCategory(person.joinDate, person.date)}</div>
+                    )}
+                  </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-1 items-start">
                       <span className={`px-2 py-0.5 text-[10px] rounded-full uppercase font-medium ${person.type === 'Voluntary' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
@@ -859,8 +978,8 @@ export default function RecruitmentDashboard() {
                   <td className="p-4 text-center">
                     <select 
                       value={person.backfillStatus}
-                      onChange={(e) => updateBackfillStatus(person.id, e.target.value)}
-                      className={`text-xs font-semibold rounded-md px-3 py-1.5 border-0 outline-none cursor-pointer w-32 text-center
+                      onChange={(e) => handleStatusChange(person, e.target.value)}
+                      className={`text-xs font-semibold rounded-md px-3 py-1.5 border-0 outline-none cursor-pointer w-full max-w-[130px] text-center
                         ${person.backfillStatus === 'Open' ? 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20' : 
                           person.backfillStatus === 'In Progress' ? 'bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-500/20' : 
                           'bg-green-50 text-green-600 ring-1 ring-inset ring-green-500/20'}`}
@@ -870,6 +989,11 @@ export default function RecruitmentDashboard() {
                       <option value="Hired">ได้คนแล้ว (Hired)</option>
                       <option value="No Backfill">ยุบตำแหน่ง</option>
                     </select>
+                    {person.backfillStatus === 'Hired' && person.hiredDate && (
+                      <div className="text-[10px] text-green-700 mt-1 font-medium bg-green-50 rounded px-1 py-0.5 inline-block">
+                        ใช้เวลาหา: {getTimeToFill(person.date, person.hiredDate)} วัน
+                      </div>
+                    )}
                   </td>
                   <td className="p-4 text-center">
                     <div className="flex justify-center gap-2">
