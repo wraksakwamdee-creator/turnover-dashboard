@@ -84,6 +84,28 @@ const getTimeToFill = (resignDate, hiredDate) => {
   return diffDays >= 0 ? diffDays : 0;
 };
 
+// --- Custom Tooltip สำหรับกราฟแนวโน้มรายเดือน ---
+const MonthlyTrendTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 border border-gray-100 shadow-md rounded-lg">
+        <p className="font-semibold text-gray-800 mb-2">{label}</p>
+        {payload.map((entry, index) => (
+          <p key={index} style={{ color: entry.color }} className="text-xs mb-1 font-medium">
+            {entry.name}: {entry.value}%
+          </p>
+        ))}
+        <div className="mt-2 pt-2 border-t border-gray-100">
+           <p className="text-xs text-yellow-600 font-medium mb-1">Regrettable Rate: {data.regRate}%</p>
+           <p className="text-xs text-green-600 font-medium">Non-Regrettable Rate: {data.nonRegRate}%</p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 const initialResignState = { 
   name: '', department: '', joinDate: '', date: '', type: 'Voluntary', regrettable: 'Yes', 
   reason: VOLUNTARY_REASONS[0], customReason: '', remarks: '', backfillStatus: 'Open', hiredDate: '' 
@@ -170,11 +192,15 @@ export default function RecruitmentDashboard() {
       const average = (beginning + ending) / 2;
       currentHC = ending;
 
+      const regRate = average > 0 ? Number(((reg / average) * 100).toFixed(2)) : 0;
+      const nonRegRate = average > 0 ? Number(((nonReg / average) * 100).toFixed(2)) : 0;
+
       return {
         month, beginning, ins, totalOut, ending, average, vol, invol, reg, nonReg,
         turnoverRate: average > 0 ? Number(((totalOut / average) * 100).toFixed(2)) : 0,
         volRate: average > 0 ? Number(((vol / average) * 100).toFixed(2)) : 0,
         involRate: average > 0 ? Number(((invol / average) * 100).toFixed(2)) : 0,
+        regRate, nonRegRate
       };
     });
 
@@ -664,16 +690,21 @@ export default function RecruitmentDashboard() {
           <h3 className="text-lg font-semibold mb-6 text-gray-800">แนวโน้ม Turnover Rate รายเดือน (%)</h3>
           <div style={{ width: '100%', height: 300, minHeight: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dashboardData.monthlyStats} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+              <LineChart data={dashboardData.monthlyStats} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
-                <RechartsTooltip 
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  formatter={(value, name) => [`${value}%`, name === 'turnoverRate' ? 'Overall Rate' : name]}
-                />
+                <RechartsTooltip content={<MonthlyTrendTooltip />} cursor={{ fill: 'transparent' }} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                <Line type="monotone" dataKey="turnoverRate" name="Overall %" stroke="#4F46E5" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="turnoverRate" name="Overall %" stroke="#4F46E5" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }}>
+                  <LabelList
+                    dataKey="turnoverRate"
+                    position="top"
+                    offset={10}
+                    formatter={(value) => `${value}%`}
+                    style={{ fontSize: '11px', fill: '#4F46E5', fontWeight: 'bold' }}
+                  />
+                </Line>
                 <Line type="monotone" dataKey="volRate" name="Voluntary %" stroke="#F97316" strokeWidth={2} dot={{ r: 3 }} />
                 <Line type="monotone" dataKey="involRate" name="Involuntary %" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
