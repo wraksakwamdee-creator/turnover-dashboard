@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X
+  Edit2, Trash2, Save, X, Download
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -80,6 +80,9 @@ export default function RecruitmentDashboard() {
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
+  
+  // State สำหรับช่องค้นหา
+  const [searchTerm, setSearchTerm] = useState('');
   
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -276,6 +279,52 @@ export default function RecruitmentDashboard() {
       await deleteDoc(docRef);
       setItemToDelete(null);
     } catch (error) { console.error("Error deleting document: ", error); }
+  };
+
+  // ฟังก์ชันสำหรับการกรองข้อมูล (Search Filter)
+  const filteredResignations = useMemo(() => {
+    if (!searchTerm) return resignations;
+    const term = searchTerm.toLowerCase();
+    return resignations.filter(person => 
+      (person.name && person.name.toLowerCase().includes(term)) ||
+      (person.department && person.department.toLowerCase().includes(term))
+    );
+  }, [resignations, searchTerm]);
+
+  // ฟังก์ชันสำหรับ Export ข้อมูลเป็นไฟล์ CSV
+  const handleExportCSV = () => {
+    if (resignations.length === 0) return;
+
+    // กำหนดหัวคอลัมน์
+    const headers = ['ชื่อพนักงาน', 'แผนก', 'วันที่ลาออก', 'ประเภท', 'ผลกระทบ', 'เหตุผล', 'หมายเหตุ', 'สถานะการหาคนแทน'];
+
+    // จัดเตรียมข้อมูล
+    const csvData = resignations.map(r => [
+      r.name || '',
+      r.department || '-',
+      r.date || '',
+      r.type || '',
+      r.regrettable === 'Yes' ? 'Regrettable' : 'Non-Regret',
+      r.reason || '-',
+      r.remarks || '-',
+      r.backfillStatus || ''
+    ]);
+
+    // ประกอบข้อมูลเข้าด้วยกันและจัดการเครื่องหมายคอมม่าในข้อความ
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // สร้างไฟล์และดาวน์โหลด (ใส่ \uFEFF เพื่อให้ Excel อ่านภาษาไทยได้ถูกต้อง)
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `turnover_data_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const totalHiresYTD = hires.reduce((sum, h) => sum + Number(h.count || 0), 0);
@@ -692,9 +741,25 @@ export default function RecruitmentDashboard() {
             <Briefcase className="h-5 w-5 text-gray-500" />
             ตารางการจัดการหาคนแทน (Backfill Tracker)
           </h3>
-          <div className="relative w-full md:w-auto">
-            <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
-            <input type="text" placeholder="ค้นหาพนักงาน..." className="pl-9 pr-4 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64" />
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+            <div className="relative w-full md:w-auto">
+              <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+              <input 
+                type="text" 
+                placeholder="ค้นหาชื่อ หรือ แผนก..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64" 
+              />
+            </div>
+            <button 
+              onClick={handleExportCSV}
+              disabled={resignations.length === 0}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="h-4 w-4 text-gray-600" />
+              Export CSV
+            </button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -711,7 +776,7 @@ export default function RecruitmentDashboard() {
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-gray-100">
-              {resignations.slice().reverse().map((person) => (
+              {filteredResignations.slice().reverse().map((person) => (
                 editingId === person.id ? (
                   <tr key={person.id} className="bg-indigo-50/30">
                     <td className="p-3"><input type="text" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></td>
@@ -815,9 +880,11 @@ export default function RecruitmentDashboard() {
                 </tr>
                 )
               ))}
-              {resignations.length === 0 && (
+              {filteredResignations.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-gray-500">ไม่มีประวัติการลาออก</td>
+                  <td colSpan="7" className="p-8 text-center text-gray-500">
+                    {searchTerm ? `ไม่พบข้อมูลพนักงานที่ตรงกับ "${searchTerm}"` : 'ไม่มีประวัติการลาออก'}
+                  </td>
                 </tr>
               )}
             </tbody>
