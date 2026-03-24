@@ -325,7 +325,17 @@ export default function RecruitmentDashboard() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 font-sans p-4">
         <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex justify-center mb-6">
-            <div className="p-4 bg-indigo-50 rounded-full">
+            {/* โชว์โลโก้ในหน้า Login ด้วย */}
+            <img 
+              src="/logo.png" 
+              alt="Company Logo" 
+              className="h-16 w-auto object-contain mb-2"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                document.getElementById('login-fallback-icon').style.display = 'flex';
+              }}
+            />
+            <div id="login-fallback-icon" className="p-4 bg-indigo-50 rounded-full" style={{ display: 'none' }}>
               <Lock className="w-8 h-8 text-indigo-600" />
             </div>
           </div>
@@ -357,8 +367,18 @@ export default function RecruitmentDashboard() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="h-7 w-7 md:h-8 md:w-8 text-indigo-600" />
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
+            {/* ดึงโลโก้จากไฟล์ /logo.png ในโฟลเดอร์ public */}
+            <img 
+              src="/logo.png" 
+              alt="Company Logo" 
+              className="h-10 md:h-12 w-auto object-contain"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                document.getElementById('header-fallback-icon').style.display = 'block';
+              }}
+            />
+            <Users id="header-fallback-icon" className="h-7 w-7 md:h-8 md:w-8 text-indigo-600" style={{ display: 'none' }} />
             Recruitment & Turnover Dashboard
           </h1>
           <p className="text-gray-500 mt-1 text-sm md:text-base">ติดตามอัตราการเข้า-ออกของพนักงาน และบริหารจัดการตำแหน่งว่าง</p>
