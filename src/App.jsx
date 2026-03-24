@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X, Download, LogOut, Lock
+  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -22,7 +22,6 @@ import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc
 
 // 🔴 นำลิงก์ Raw Image ที่ก๊อปปี้มา วางในเครื่องหมายคำพูดด้านล่างนี้ครับ 🔴
 const COMPANY_LOGO_URL = "https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true";
-
 
 const firebaseConfig = {
   apiKey: "AIzaSyCz1G9X2IgcThyIPWDmcUDvcu583QhVYzQ",
@@ -113,11 +112,19 @@ export default function RecruitmentDashboard() {
   const [showResignForm, setShowResignForm] = useState(false);
   const [newResign, setNewResign] = useState(initialResignState);
   const [showHireForm, setShowHireForm] = useState(false);
-  const [newHire, setNewHire] = useState({ month: 'Jan', count: 1 });
+  // เพิ่ม state year สำหรับฟอร์มรับเข้าใหม่
+  const [newHire, setNewHire] = useState({ month: 'Jan', year: new Date().getFullYear().toString(), count: 1 });
+  
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
+  
+  // States สำหรับ ตัวกรอง และ ค้นหา และ แบ่งหน้าตาราง
+  const [filterYear, setFilterYear] = useState('All');
+  const [filterDept, setFilterDept] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // --- 1. จัดการการ Login ---
   useEffect(() => {
@@ -158,15 +165,47 @@ export default function RecruitmentDashboard() {
     return () => { unsubResignations(); unsubHires(); };
   }, [user]);
 
-  // --- Logic การคำนวณตามสูตร ---
+  // --- ดึงรายการปี และแผนกที่มีในระบบ เพื่อสร้าง Dropdown ตัวกรอง ---
+  const availableYears = useMemo(() => {
+    const years = new Set(resignations.map(r => r.date ? r.date.substring(0, 4) : null).filter(Boolean));
+    hires.forEach(h => { if(h.year) years.add(h.year); else years.add('2026'); });
+    return Array.from(years).sort().reverse();
+  }, [resignations, hires]);
+
+  const availableDepts = useMemo(() => {
+    const depts = new Set(resignations.map(r => r.department).filter(Boolean));
+    return Array.from(depts).sort();
+  }, [resignations]);
+
+  // รีเซ็ตหน้าตารางเป็นหน้า 1 เมื่อเปลี่ยนตัวกรอง
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterYear, filterDept]);
+
+  // --- ประมวลผลข้อมูลตามตัวกรอง (Global Filter) ---
+  const processedResignations = useMemo(() => {
+    return resignations.filter(r => {
+      const matchYear = filterYear === 'All' || (r.date && r.date.startsWith(filterYear));
+      const matchDept = filterDept === 'All' || r.department === filterDept;
+      return matchYear && matchDept;
+    });
+  }, [resignations, filterYear, filterDept]);
+
+  const processedHires = useMemo(() => {
+    return hires.filter(h => {
+      const hYear = h.year || '2026';
+      // Hires ไม่มี Department เลยกรองแค่ปี
+      return filterYear === 'All' || hYear === filterYear;
+    });
+  }, [hires, filterYear]);
+
+  // --- Logic การคำนวณตามสูตร (ใช้ข้อมูลที่กรองแล้ว) ---
   const dashboardData = useMemo(() => {
     let currentHC = INITIAL_HEADCOUNT;
     let ytdTotalOut = 0; let ytdVoluntary = 0; let ytdInvoluntary = 0; let ytdRegrettable = 0; let ytdNonRegrettable = 0;
 
     const monthlyStats = MONTHS.map(month => {
       const monthIndex = MONTHS.indexOf(month);
-      const ins = hires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
-      const outsThisMonth = resignations.filter(r => {
+      const ins = processedHires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
+      const outsThisMonth = processedResignations.filter(r => {
         if (!r.date) return false; return new Date(r.date).getMonth() === monthIndex;
       });
 
@@ -203,37 +242,51 @@ export default function RecruitmentDashboard() {
         regrettable: ytdRegrettable, nonRegrettable: ytdNonRegrettable
       }
     };
-  }, [resignations, hires]);
+  }, [processedResignations, processedHires]);
 
   const hiresStats = useMemo(() => {
     return MONTHS.map(month => {
-      const count = hires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
+      const count = processedHires.filter(h => h.month === month).reduce((sum, h) => sum + Number(h.count || 0), 0);
       return { month, count };
     });
-  }, [hires]);
+  }, [processedHires]);
 
   const reasonStats = useMemo(() => {
     const counts = {};
-    resignations.forEach(r => { counts[r.reason || 'ไม่ระบุเหตุผล'] = (counts[r.reason || 'ไม่ระบุเหตุผล'] || 0) + 1; });
+    processedResignations.forEach(r => { counts[r.reason || 'ไม่ระบุเหตุผล'] = (counts[r.reason || 'ไม่ระบุเหตุผล'] || 0) + 1; });
     return Object.keys(counts).map((key, index) => ({ name: key, value: counts[key], fill: COLORS[index % COLORS.length] }));
-  }, [resignations]);
+  }, [processedResignations]);
 
   const departmentStats = useMemo(() => {
     const counts = {}; let totalOut = 0;
-    resignations.forEach(r => { counts[r.department || 'ไม่ระบุแผนก'] = (counts[r.department || 'ไม่ระบุแผนก'] || 0) + 1; totalOut++; });
+    processedResignations.forEach(r => { counts[r.department || 'ไม่ระบุแผนก'] = (counts[r.department || 'ไม่ระบุแผนก'] || 0) + 1; totalOut++; });
     return Object.keys(counts).map(key => ({ department: key, count: counts[key], percent: totalOut > 0 ? ((counts[key] / totalOut) * 100).toFixed(1) : 0 })).sort((a, b) => b.count - a.count);
-  }, [resignations]);
+  }, [processedResignations]);
 
   const tenureStats = useMemo(() => {
     const counts = { '< 1 ปี': 0, '1-3 ปี': 0, '3-5 ปี': 0, '> 5 ปี': 0 }; let totalOut = 0;
-    resignations.forEach(r => {
+    processedResignations.forEach(r => {
       const cat = getTenureCategory(r.joinDate, r.date);
       if (counts[cat] !== undefined) { counts[cat]++; totalOut++; }
     });
     return Object.keys(counts).map((key, index) => ({
       tenure: key, count: counts[key], percent: totalOut > 0 ? ((counts[key] / totalOut) * 100).toFixed(1) : 0, fill: TENURE_COLORS[index]
     }));
-  }, [resignations]);
+  }, [processedResignations]);
+
+  // กราฟสรุปสถานะหาคนแทน
+  const backfillStats = useMemo(() => {
+    const counts = { 'Open': 0, 'In Progress': 0, 'Hired': 0, 'No Backfill': 0 };
+    processedResignations.forEach(r => {
+      const status = r.backfillStatus || 'Open';
+      if (counts[status] !== undefined) counts[status]++;
+    });
+    return Object.keys(counts).map(key => ({
+      name: key,
+      value: counts[key],
+      fill: key === 'Open' ? '#ef4444' : key === 'In Progress' ? '#3b82f6' : key === 'Hired' ? '#10b981' : '#9ca3af'
+    }));
+  }, [processedResignations]);
 
   // --- 3. ฟังก์ชันบันทึกข้อมูล ---
   const handleAddResignation = async (e) => {
@@ -295,26 +348,40 @@ export default function RecruitmentDashboard() {
     await deleteDoc(doc(db, companyDataId, 'public', 'resignations', itemToDelete)); setItemToDelete(null);
   };
 
-  const filteredResignations = useMemo(() => {
-    if (!searchTerm) return resignations; const term = searchTerm.toLowerCase();
-    return resignations.filter(person => (person.name && person.name.toLowerCase().includes(term)) || (person.department && person.department.toLowerCase().includes(term)));
-  }, [resignations, searchTerm]);
+  // --- ข้อมูลสำหรับแสดงในตาราง (ผ่าน Filter และ Search) ---
+  const searchedResignations = useMemo(() => {
+    if (!searchTerm) return processedResignations; 
+    const term = searchTerm.toLowerCase();
+    return processedResignations.filter(person => 
+      (person.name && person.name.toLowerCase().includes(term)) || 
+      (person.department && person.department.toLowerCase().includes(term))
+    );
+  }, [processedResignations, searchTerm]);
+
+  // --- ระบบแบ่งหน้าตาราง (Pagination) ---
+  const totalPages = Math.ceil(searchedResignations.length / itemsPerPage) || 1;
+  const paginatedResignations = useMemo(() => {
+    // เอาข้อมูลล่าสุดขึ้นก่อน (reverse) แล้วตัดแบ่งหน้า
+    const reversed = [...searchedResignations].reverse();
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return reversed.slice(startIndex, startIndex + itemsPerPage);
+  }, [searchedResignations, currentPage]);
 
   const handleExportCSV = () => {
-    if (resignations.length === 0) return;
+    if (processedResignations.length === 0) return;
     const headers = ['ชื่อพนักงาน', 'แผนก', 'วันที่เริ่มงาน', 'วันที่ลาออก', 'อายุงาน', 'ประเภท', 'ผลกระทบ', 'เหตุผล', 'หมายเหตุ', 'สถานะการหาคนแทน', 'วันที่ได้คน', 'Time-to-Fill (วัน)'];
-    const csvData = resignations.map(r => [
+    const csvData = processedResignations.map(r => [
       r.name || '', r.department || '-', r.joinDate || '-', r.date || '', getTenureCategory(r.joinDate, r.date), r.type || '',
       r.regrettable === 'Yes' ? 'Regrettable' : 'Non-Regret', r.reason || '-', r.remarks || '-', r.backfillStatus || '', r.hiredDate || '-',
       r.backfillStatus === 'Hired' && r.hiredDate ? getTimeToFill(r.date, r.hiredDate) : '-'
     ]);
     const csvContent = [headers.join(','), ...csvData.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.setAttribute('download', `turnover_data_${new Date().toISOString().split('T')[0]}.csv`);
+    const link = document.createElement('a'); link.href = url; link.setAttribute('download', `turnover_data_${filterYear}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const totalHiresYTD = hires.reduce((sum, h) => sum + Number(h.count || 0), 0);
+  const totalHiresYTD = processedHires.reduce((sum, h) => sum + Number(h.count || 0), 0);
   const currentReasonOptions = getReasonOptions(newResign.type);
 
   // สร้างวันที่ปัจจุบันแบบ Real-time (DD/MM/YYYY)
@@ -329,7 +396,6 @@ export default function RecruitmentDashboard() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 font-sans p-4">
         <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex justify-center mb-6">
-            {/* โชว์โลโก้ในหน้า Login */}
             <img 
               src={COMPANY_LOGO_URL}
               alt="Company Logo" 
@@ -369,10 +435,9 @@ export default function RecruitmentDashboard() {
     <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
-            {/* โชว์โลโก้ มุมซ้ายบน */}
             <img 
               src={COMPANY_LOGO_URL}
               alt="Company Logo" 
@@ -389,33 +454,44 @@ export default function RecruitmentDashboard() {
           <p className="text-gray-500 mt-1 text-sm md:text-base">ติดตามอัตราการเข้า-ออกของพนักงาน และบริหารจัดการตำแหน่งว่าง</p>
         </div>
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <button 
-            onClick={() => { setShowHireForm(!showHireForm); setShowResignForm(false); }}
-            className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors"
-          >
-            <UserPlus className="h-4 w-4 text-green-600" />
-            เพิ่มคนเข้า (In)
+          <button onClick={() => { setShowHireForm(!showHireForm); setShowResignForm(false); }} className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors">
+            <UserPlus className="h-4 w-4 text-green-600" /> เพิ่มคนเข้า
           </button>
-          <button 
-            onClick={() => { setShowResignForm(!showResignForm); setShowHireForm(false); }}
-            className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            เพิ่มคนออก (Out)
+          <button onClick={() => { setShowResignForm(!showResignForm); setShowHireForm(false); }} className="flex-1 md:flex-none flex justify-center items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition-colors">
+            <Plus className="h-4 w-4" /> เพิ่มคนออก
           </button>
-          <button 
-            onClick={handleLogout}
-            className="flex-none flex justify-center items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
-            title="ออกจากระบบ"
-          >
+          <button onClick={handleLogout} className="flex-none flex justify-center items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors" title="ออกจากระบบ">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
       </div>
 
+      {/* Global Filters Section */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-8 flex flex-col md:flex-row items-center gap-4">
+        <div className="flex items-center gap-2 text-gray-600 font-medium">
+          <Filter className="w-5 h-5 text-indigo-500" />
+          ตัวกรองข้อมูล:
+        </div>
+        <div className="flex gap-4 w-full md:w-auto">
+          <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="p-2 border border-gray-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 min-w-[120px]">
+            <option value="All">ทุกปี (All Years)</option>
+            {availableYears.map(year => <option key={year} value={year}>ปี {year}</option>)}
+          </select>
+          <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="p-2 border border-gray-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 min-w-[150px]">
+            <option value="All">ทุกแผนก (All Depts)</option>
+            {availableDepts.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+          </select>
+        </div>
+        {(filterYear !== 'All' || filterDept !== 'All') && (
+          <div className="text-xs text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full font-medium ml-auto">
+            กำลังแสดงข้อมูลตัวกรองที่เลือก
+          </div>
+        )}
+      </div>
+
       {/* Forms */}
       {showResignForm && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-200 mb-8">
           <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">แบบฟอร์มบันทึกพนักงานลาออก</h3>
           <form onSubmit={handleAddResignation} className="flex flex-col gap-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -488,11 +564,15 @@ export default function RecruitmentDashboard() {
       )}
 
       {showHireForm && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 flex flex-col md:flex-row gap-8">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-green-200 mb-8 flex flex-col md:flex-row gap-8">
           <div className="flex-1 border-b md:border-b-0 md:border-r border-gray-200 pb-6 md:pb-0 md:pr-6">
             <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า (Add Hires)</h3>
             <form onSubmit={handleAddHire} className="flex flex-col gap-4">
               <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ปี</label>
+                  <input type="number" required value={newHire.year} onChange={e => setNewHire({...newHire, year: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 mb-1">เดือน</label>
                   <select value={newHire.month} onChange={e => setNewHire({...newHire, month: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
@@ -515,6 +595,7 @@ export default function RecruitmentDashboard() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0">
                   <tr>
+                    <th className="p-2 border-b">ปี</th>
                     <th className="p-2 border-b">เดือน</th>
                     <th className="p-2 border-b">จำนวน (คน)</th>
                     <th className="p-2 border-b text-center">ลบ</th>
@@ -522,8 +603,9 @@ export default function RecruitmentDashboard() {
                 </thead>
                 <tbody>
                   {hires.length > 0 ? (
-                    hires.map(h => (
+                    hires.slice().reverse().map(h => (
                       <tr key={h.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                        <td className="p-2 font-medium">{h.year || '2026'}</td>
                         <td className="p-2 font-medium">{h.month}</td>
                         <td className="p-2 text-green-600 font-semibold">+{h.count}</td>
                         <td className="p-2 text-center">
@@ -535,7 +617,7 @@ export default function RecruitmentDashboard() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="3" className="p-4 text-center text-xs text-gray-400">ยังไม่มีประวัติการรับเข้า</td>
+                      <td colSpan="4" className="p-4 text-center text-xs text-gray-400">ยังไม่มีประวัติการรับเข้า</td>
                     </tr>
                   )}
                 </tbody>
@@ -550,12 +632,12 @@ export default function RecruitmentDashboard() {
         
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col justify-between">
           <div className="flex justify-between items-start">
-            <p className="text-xs font-medium text-gray-500">Beginning HC (Jan 2026)</p>
+            <p className="text-xs font-medium text-gray-500">Beginning HC</p>
             <Users className="h-4 w-4 text-gray-400" />
           </div>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-gray-900">{INITIAL_HEADCOUNT} <span className="text-sm font-normal text-gray-500">คน</span></h2>
-            <p className="text-[10px] text-gray-600 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-full">พนักงานตั้งต้นเมื่อเริ่มปี</p>
+            <p className="text-[10px] text-gray-600 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-full">ฐานตั้งต้น</p>
           </div>
         </div>
 
@@ -566,7 +648,7 @@ export default function RecruitmentDashboard() {
           </div>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-gray-900">+{totalHiresYTD} <span className="text-sm font-normal text-gray-500">คน</span></h2>
-            <p className="text-[10px] text-green-700 mt-1 bg-green-50 inline-block px-2 py-0.5 rounded-full">รับเข้าตั้งแต่ต้นปี</p>
+            <p className="text-[10px] text-green-700 mt-1 bg-green-50 inline-block px-2 py-0.5 rounded-full">รับเข้าตามตัวกรอง</p>
           </div>
         </div>
 
@@ -577,14 +659,14 @@ export default function RecruitmentDashboard() {
           </div>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-gray-900">-{dashboardData.ytd.totalOut} <span className="text-sm font-normal text-gray-500">คน</span></h2>
-            <p className="text-[10px] text-red-700 mt-1 bg-red-50 inline-block px-2 py-0.5 rounded-full">ลาออกตั้งแต่ต้นปี</p>
+            <p className="text-[10px] text-red-700 mt-1 bg-red-50 inline-block px-2 py-0.5 rounded-full">ลาออกตามตัวกรอง</p>
           </div>
         </div>
 
         <div className="bg-indigo-50 rounded-xl p-4 shadow-sm border border-indigo-100 flex flex-col justify-between">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-semibold text-indigo-800">Ending HC (พนักงานสุทธิ)</p>
+              <p className="text-xs font-semibold text-indigo-800">Ending HC (สุทธิ)</p>
               <p className="text-[10px] text-indigo-600 mt-0.5 font-medium">ณ วันนี้ {formattedToday}</p>
             </div>
             <CheckCircle className="h-4 w-4 text-indigo-600" />
@@ -717,7 +799,53 @@ export default function RecruitmentDashboard() {
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full">
-          <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนอายุงานก่อนลาออก (Tenure)</h3>
+          <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนเหตุผลการลาออก</h3>
+          <div className="flex justify-center items-center w-full h-[300px]">
+            {reasonStats.length > 0 ? (
+              <div className="w-full max-w-[600px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
+                    <Pie data={reasonStats} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={5} dataKey="value" labelLine={true} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`} style={{ fontSize: '11px', fontWeight: '500' }}>
+                      {reasonStats.map((entry, index) => ( 
+                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
+                      ))}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <Legend iconType="circle" layout="vertical" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีข้อมูล</p></div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-1">
+          <h3 className="text-lg font-semibold mb-6 text-gray-800">สรุปสถานะการหาคนแทน (Backfill)</h3>
+          <div className="flex justify-center items-center w-full h-[300px]">
+            {backfillStats.some(s => s.value > 0) ? (
+              <div className="w-full max-w-[600px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
+                    <Pie data={backfillStats} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" labelLine={false} label={({ name, value }) => `${name}: ${value}`} style={{ fontSize: '11px', fontWeight: '600' }}>
+                      {backfillStats.map((entry, index) => ( 
+                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
+                      ))}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value) => [`${value} ตำแหน่ง`, 'จำนวน']} />
+                    <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีตำแหน่งว่าง</p></div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-1">
+          <h3 className="text-lg font-semibold mb-6 text-gray-800">อายุงานก่อนลาออก (Tenure)</h3>
           <div style={{ width: '100%', height: 300, minHeight: 300 }}>
             {tenureStats.some(s => s.count > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -740,29 +868,6 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-2">
-          <h3 className="text-lg font-semibold mb-6 text-gray-800">สัดส่วนเหตุผลการลาออก</h3>
-          <div className="flex justify-center items-center w-full h-[300px]">
-            {reasonStats.length > 0 ? (
-              <div className="w-full max-w-[600px] h-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-                    <Pie data={reasonStats} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={5} dataKey="value" labelLine={true} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`} style={{ fontSize: '11px', fontWeight: '500' }}>
-                      {reasonStats.map((entry, index) => ( 
-                        /* 🔴 ล็อกสี pie chart ให้ทับ Tailwind CSS อย่างเด็ดขาด */
-                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
-                      ))}
-                    </Pie>
-                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <Legend iconType="circle" layout="vertical" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีข้อมูลการลาออก</p></div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Recruitment Action Table */}
@@ -777,7 +882,7 @@ export default function RecruitmentDashboard() {
               <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
               <input type="text" placeholder="ค้นหาชื่อ หรือ แผนก..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 w-full md:w-64" />
             </div>
-            <button onClick={handleExportCSV} disabled={resignations.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onClick={handleExportCSV} disabled={processedResignations.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               <Download className="h-4 w-4 text-gray-600" /> Export CSV
             </button>
           </div>
@@ -786,17 +891,17 @@ export default function RecruitmentDashboard() {
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-white text-xs uppercase text-gray-500 tracking-wider">
-                <th className="p-4 font-medium border-b">ชื่อพนักงาน</th>
-                <th className="p-4 font-medium border-b">แผนก</th>
-                <th className="p-4 font-medium border-b">อายุงาน (Tenure)</th>
-                <th className="p-4 font-medium border-b">ประเภท / Impact</th>
-                <th className="p-4 font-medium border-b">เหตุผล</th>
-                <th className="p-4 font-medium border-b text-center">สถานะการหาคนแทน</th>
-                <th className="p-4 font-medium border-b text-center">จัดการ</th>
+                <th className="p-4 font-medium border-b w-[15%]">ชื่อพนักงาน</th>
+                <th className="p-4 font-medium border-b w-[10%]">แผนก</th>
+                <th className="p-4 font-medium border-b w-[15%]">อายุงาน (Tenure)</th>
+                <th className="p-4 font-medium border-b w-[15%]">ประเภท / Impact</th>
+                <th className="p-4 font-medium border-b w-[20%]">เหตุผล</th>
+                <th className="p-4 font-medium border-b text-center w-[15%]">สถานะการหาคนแทน</th>
+                <th className="p-4 font-medium border-b text-center w-[10%]">จัดการ</th>
               </tr>
             </thead>
             <tbody className="text-sm divide-y divide-gray-100">
-              {filteredResignations.slice().reverse().map((person) => (
+              {paginatedResignations.map((person) => (
                 editingId === person.id ? (
                   <tr key={person.id} className="bg-indigo-50/30">
                     <td className="p-3"><input type="text" className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></td>
@@ -849,9 +954,9 @@ export default function RecruitmentDashboard() {
                   <td className="p-4 text-gray-600">{person.department}</td>
                   <td className="p-4 text-gray-600"><div className="font-medium text-gray-800">ออก: {person.date}</div>{person.joinDate && <div className="text-[10px] text-gray-500">เริ่ม: {person.joinDate}</div>}{person.joinDate && person.date && <div className="text-[10px] font-bold text-indigo-600 mt-0.5">อายุงาน: {getTenureCategory(person.joinDate, person.date)}</div>}</td>
                   <td className="p-4"><div className="flex flex-col gap-1 items-start"><span className={`px-2 py-0.5 text-[10px] rounded-full uppercase font-medium ${person.type === 'Voluntary' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>{person.type}</span><span className={`px-2 py-0.5 text-[10px] rounded-full uppercase font-medium ${person.regrettable === 'Yes' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{person.regrettable === 'Yes' ? 'Regrettable' : 'Non-Regret'}</span></div></td>
-                  <td className="p-4 text-gray-600 max-w-[200px]"><div className="truncate font-medium text-gray-800" title={person.reason}>{person.reason || '-'}</div>{person.remarks && <div className="text-[10px] text-gray-500 mt-1 leading-tight line-clamp-2" title={person.remarks}>หมายเหตุ: {person.remarks}</div>}</td>
+                  <td className="p-4 text-gray-600 max-w-xs"><div className="truncate font-medium text-gray-800" title={person.reason}>{person.reason || '-'}</div>{person.remarks && <div className="text-[10px] text-gray-500 mt-1 leading-tight line-clamp-2" title={person.remarks}>หมายเหตุ: {person.remarks}</div>}</td>
                   <td className="p-4 text-center">
-                    <select value={person.backfillStatus} onChange={(e) => handleStatusChange(person, e.target.value)} className={`text-xs font-semibold rounded-md px-3 py-1.5 border-0 outline-none cursor-pointer w-full max-w-[130px] text-center ${person.backfillStatus === 'Open' ? 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20' : person.backfillStatus === 'In Progress' ? 'bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-500/20' : 'bg-green-50 text-green-600 ring-1 ring-inset ring-green-500/20'}`}>
+                    <select value={person.backfillStatus} onChange={(e) => handleStatusChange(person, e.target.value)} className={`text-xs font-semibold rounded-md px-3 py-1.5 border-0 outline-none cursor-pointer w-full max-w-[130px] text-center ${person.backfillStatus === 'Open' ? 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-500/20' : person.backfillStatus === 'In Progress' ? 'bg-blue-50 text-blue-600 ring-1 ring-inset ring-blue-500/20' : person.backfillStatus === 'No Backfill' ? 'bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-500/20' : 'bg-green-50 text-green-600 ring-1 ring-inset ring-green-500/20'}`}>
                       <option value="Open">เปิดรับ (Open)</option><option value="In Progress">กำลังหา (In Progress)</option><option value="Hired">ได้คนแล้ว (Hired)</option><option value="No Backfill">ยุบตำแหน่ง</option>
                     </select>
                     {person.backfillStatus === 'Hired' && person.hiredDate && <div className="text-[10px] text-green-700 mt-1 font-medium bg-green-50 rounded px-1 py-0.5 inline-block">ใช้เวลาหา: {getTimeToFill(person.date, person.hiredDate)} วัน</div>}
@@ -865,10 +970,35 @@ export default function RecruitmentDashboard() {
                 </tr>
                 )
               ))}
-              {filteredResignations.length === 0 && <tr><td colSpan="7" className="p-8 text-center text-gray-500">{searchTerm ? `ไม่พบข้อมูลพนักงานที่ตรงกับ "${searchTerm}"` : 'ไม่มีประวัติการลาออก'}</td></tr>}
+              {paginatedResignations.length === 0 && <tr><td colSpan="7" className="p-8 text-center text-gray-500">{searchTerm ? `ไม่พบข้อมูลพนักงานที่ตรงกับ "${searchTerm}"` : 'ไม่มีประวัติการลาออกในหมวดหมู่นี้'}</td></tr>}
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-white">
+            <span className="text-sm text-gray-500">
+              กำลังแสดงหน้าที่ <span className="font-semibold text-gray-900">{currentPage}</span> จากทั้งหมด <span className="font-semibold text-gray-900">{totalPages}</span> หน้า (รวม {searchedResignations.length} รายการ)
+            </span>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                disabled={currentPage === 1}
+                className="p-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                disabled={currentPage === totalPages}
+                className="p-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pop-up Modal สำหรับยืนยันการลบ */}
