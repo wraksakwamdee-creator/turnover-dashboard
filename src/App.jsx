@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info, Banknote
+  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -294,12 +294,6 @@ export default function RecruitmentDashboard() {
     if (hiredRoles.length === 0) return 0;
     const totalDays = hiredRoles.reduce((sum, r) => sum + getTimeToFill(r.date, r.hiredDate), 0);
     return Math.round(totalDays / hiredRoles.length);
-  }, [processedResignations]);
-
-  const estimatedCost = useMemo(() => {
-    return processedResignations.reduce((sum, r) => {
-      return sum + (r.criticality === 'Critical' ? 150000 : 50000);
-    }, 0);
   }, [processedResignations]);
 
   // --- 3. ฟังก์ชันบันทึกข้อมูล ---
@@ -805,24 +799,8 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        {/* --- New Card: Estimated Cost of Turnover --- */}
-        <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-5 shadow-sm border border-red-100 flex flex-col justify-between md:col-span-2">
-          <div className="flex justify-between items-start">
-            <p className="text-sm font-semibold text-red-800">Estimated Cost of Turnover</p>
-            <Banknote className="h-5 w-5 text-red-500" />
-          </div>
-          <div className="mt-3">
-            <h2 className="text-3xl font-bold text-red-700">
-              ฿{estimatedCost.toLocaleString('th-TH')}
-            </h2>
-            <p className="text-[10px] text-red-600 mt-1 bg-white/60 inline-block px-2 py-0.5 rounded-full font-medium">
-              *Estimate: 150k per Critical Role | 50k per Non-Critical
-            </p>
-          </div>
-        </div>
-
-        {/* --- New Card: Average Time-to-Fill --- */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 shadow-sm border border-blue-100 flex flex-col justify-between md:col-span-2">
+        {/* --- Card: Average Time-to-Fill --- */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 shadow-sm border border-blue-100 flex flex-col justify-between md:col-span-2 lg:col-span-4">
           <div className="flex justify-between items-start">
             <p className="text-sm font-semibold text-indigo-800">Average Time-to-Fill</p>
             <Clock className="h-5 w-5 text-indigo-500" />
@@ -832,7 +810,7 @@ export default function RecruitmentDashboard() {
               {averageTimeToFill} <span className="text-lg font-medium text-indigo-500">Days</span>
             </h2>
             <p className="text-[10px] text-indigo-600 mt-1 bg-white/60 inline-block px-2 py-0.5 rounded-full font-medium">
-              Average days taken to backfill a resigned role
+              ระยะเวลาเฉลี่ย (วัน) ที่ใช้ในการหาคนแทนตำแหน่งที่ว่าง
             </p>
           </div>
         </div>
