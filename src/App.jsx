@@ -20,6 +20,10 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 
+// 🔴 นำลิงก์ Raw Image ที่ก๊อปปี้มา วางในเครื่องหมายคำพูดด้านล่างนี้ครับ 🔴
+const COMPANY_LOGO_URL = "https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true";
+
+
 const firebaseConfig = {
   apiKey: "AIzaSyCz1G9X2IgcThyIPWDmcUDvcu583QhVYzQ",
   authDomain: "recruitment-and-turnover-7d589.firebaseapp.com",
@@ -325,9 +329,9 @@ export default function RecruitmentDashboard() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 font-sans p-4">
         <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex justify-center mb-6">
-            {/* โชว์โลโก้ในหน้า Login ด้วย */}
+            {/* โชว์โลโก้ในหน้า Login */}
             <img 
-              src="/https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true" 
+              src={COMPANY_LOGO_URL}
               alt="Company Logo" 
               className="h-16 w-auto object-contain mb-2"
               onError={(e) => {
@@ -335,7 +339,7 @@ export default function RecruitmentDashboard() {
                 document.getElementById('login-fallback-icon').style.display = 'flex';
               }}
             />
-            <div id="login-fallback-icon" className="p-4 bg-indigo-50 rounded-full" style={{ display: 'none' }}>
+            <div id="login-fallback-icon" className="p-4 bg-indigo-50 rounded-full" style={{ display: COMPANY_LOGO_URL.includes('วางลิงก์') ? 'flex' : 'none' }}>
               <Lock className="w-8 h-8 text-indigo-600" />
             </div>
           </div>
@@ -368,9 +372,9 @@ export default function RecruitmentDashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
-            {/* ดึงโลโก้จากไฟล์ /logo.png ในโฟลเดอร์ public */}
+            {/* โชว์โลโก้ มุมซ้ายบน */}
             <img 
-              src="/https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true" 
+              src={COMPANY_LOGO_URL}
               alt="Company Logo" 
               className="h-10 md:h-12 w-auto object-contain"
               onError={(e) => {
@@ -378,8 +382,9 @@ export default function RecruitmentDashboard() {
                 document.getElementById('header-fallback-icon').style.display = 'block';
               }}
             />
-            <Users id="header-fallback-icon" className="h-7 w-7 md:h-8 md:w-8 text-indigo-600" style={{ display: 'none' }} />
-            Recruitment & Turnover Dashboard
+            <Users id="header-fallback-icon" className="h-7 w-7 md:h-8 md:w-8 text-indigo-600" style={{ display: COMPANY_LOGO_URL.includes('วางลิงก์') ? 'block' : 'none' }} />
+            <span className="hidden md:inline border-l-2 border-gray-300 h-8 mx-2"></span>
+            Recruitment Dashboard
           </h1>
           <p className="text-gray-500 mt-1 text-sm md:text-base">ติดตามอัตราการเข้า-ออกของพนักงาน และบริหารจัดการตำแหน่งว่าง</p>
         </div>
@@ -699,7 +704,9 @@ export default function RecruitmentDashboard() {
                   <RechartsTooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value) => [`${value} คน`, 'จำนวนลาออก']} />
                   <Bar dataKey="count" name="จำนวนลาออก" radius={[4, 4, 0, 0]}>
                     <LabelList dataKey="count" position="top" content={(props) => { const { x, y, width, value, index } = props; const percent = departmentStats[index]?.percent; return <text x={x + width / 2} y={y - 8} fill="#6B7280" textAnchor="middle" fontSize="11" fontWeight="600">{value} คน ({percent}%)</text>; }} />
-                    {departmentStats.map((entry, index) => ( <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} /> ))}
+                    {departmentStats.map((entry, index) => ( 
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} /> 
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -721,7 +728,9 @@ export default function RecruitmentDashboard() {
                   <RechartsTooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value) => [`${value} คน`, 'จำนวนลาออก']} />
                   <Bar dataKey="count" name="จำนวนลาออก" radius={[4, 4, 0, 0]}>
                     <LabelList dataKey="count" position="top" content={(props) => { const { x, y, width, value, index } = props; if (value === 0) return null; const percent = tenureStats[index]?.percent; return <text x={x + width / 2} y={y - 8} fill="#6B7280" textAnchor="middle" fontSize="11" fontWeight="600">{value} คน ({percent}%)</text>; }} />
-                    {tenureStats.map((entry, index) => ( <Cell key={`cell-${index}`} fill={entry.fill} /> ))}
+                    {tenureStats.map((entry, index) => ( 
+                      <Cell key={`cell-${index}`} fill={entry.fill} /> 
+                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -739,7 +748,10 @@ export default function RecruitmentDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
                     <Pie data={reasonStats} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={5} dataKey="value" labelLine={true} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(1)}%)`} style={{ fontSize: '11px', fontWeight: '500' }}>
-                      {reasonStats.map((entry, index) => ( <Cell key={`cell-${index}`} fill={entry.fill} /> ))}
+                      {reasonStats.map((entry, index) => ( 
+                        /* 🔴 ล็อกสี pie chart ให้ทับ Tailwind CSS อย่างเด็ดขาด */
+                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
+                      ))}
                     </Pie>
                     <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                     <Legend iconType="circle" layout="vertical" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />
