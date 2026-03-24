@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info
+  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info, Banknote
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -124,6 +124,9 @@ export default function RecruitmentDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const [addFormError, setAddFormError] = useState('');
+  const [editFormError, setEditFormError] = useState('');
 
   // --- 1. จัดการการ Login ---
   useEffect(() => {
@@ -293,9 +296,26 @@ export default function RecruitmentDashboard() {
     return Math.round(totalDays / hiredRoles.length);
   }, [processedResignations]);
 
+  const estimatedCost = useMemo(() => {
+    return processedResignations.reduce((sum, r) => {
+      return sum + (r.criticality === 'Critical' ? 150000 : 50000);
+    }, 0);
+  }, [processedResignations]);
+
   // --- 3. ฟังก์ชันบันทึกข้อมูล ---
   const handleAddResignation = async (e) => {
     e.preventDefault(); if (!user || !newResign.name || !newResign.date) return;
+    
+    setAddFormError('');
+    if (newResign.joinDate && new Date(newResign.joinDate) > new Date(newResign.date)) {
+      setAddFormError('Join Date cannot be after the Effective Date.');
+      return;
+    }
+    if (newResign.backfillStatus === 'Hired' && !newResign.hiredDate) {
+      setAddFormError('Please select a Hired Date when the status is "Hired".');
+      return;
+    }
+
     try {
       const finalReason = newResign.reason === 'อื่นๆ' ? newResign.customReason : newResign.reason;
       const resignDataToSave = { ...newResign, reason: finalReason }; delete resignDataToSave.customReason;
@@ -338,6 +358,17 @@ export default function RecruitmentDashboard() {
 
   const handleSaveEdit = async () => {
     if (!user || !editingId) return;
+
+    setEditFormError('');
+    if (editFormData.joinDate && editFormData.date && new Date(editFormData.joinDate) > new Date(editFormData.date)) {
+      setEditFormError('Join Date cannot be after Effective Date.');
+      return;
+    }
+    if (editFormData.backfillStatus === 'Hired' && !editFormData.hiredDate) {
+      setEditFormError('Please specify Hired Date.');
+      return;
+    }
+
     try {
       const finalReason = editFormData.dropdownReason === 'อื่นๆ' ? editFormData.customReason : editFormData.dropdownReason;
       const { id, dropdownReason, customReason, ...updateData } = editFormData; updateData.reason = finalReason;
@@ -347,7 +378,7 @@ export default function RecruitmentDashboard() {
     } catch (error) { console.error("Error updating document: ", error); }
   };
 
-  const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); };
+  const handleCancelEdit = () => { setEditingId(null); setEditFormData({}); setEditFormError(''); };
 
   const confirmDelete = async () => {
     if (!user || !itemToDelete) return;
@@ -565,8 +596,15 @@ export default function RecruitmentDashboard() {
                 <select value={newResign.backfillStatus} onChange={e => setNewResign({...newResign, backfillStatus: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
                   <option value="Open">เปิดรับ (Open)</option>
                   <option value="No Backfill">ยุบตำแหน่ง</option>
+                  <option value="Hired">ได้คนแล้ว (Hired)</option>
                 </select>
               </div>
+              {newResign.backfillStatus === 'Hired' && (
+                <div className="lg:col-span-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">วันที่ได้คน (Hired Date)</label>
+                  <input type="date" value={newResign.hiredDate} onChange={e => setNewResign({...newResign, hiredDate: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+              )}
               <div className="lg:col-span-3">
                 <label className="block text-xs font-medium text-gray-600 mb-1">เหตุผลที่ออก (Reason)</label>
                 <div className="flex gap-2">
@@ -583,8 +621,13 @@ export default function RecruitmentDashboard() {
                 <input type="text" value={newResign.remarks} onChange={e => setNewResign({...newResign, remarks: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-yellow-50" placeholder="บันทึกข้อมูลเพิ่มเติม (ไม่บังคับ)" />
               </div>
             </div>
+            {addFormError && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm font-medium rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" /> {addFormError}
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setShowResignForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">ปิดหน้าต่าง</button>
+              <button type="button" onClick={() => {setShowResignForm(false); setAddFormError('');}} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">ปิดหน้าต่าง</button>
               <button type="submit" className="px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 shadow-sm">บันทึกคนออก</button>
             </div>
           </form>
@@ -761,6 +804,39 @@ export default function RecruitmentDashboard() {
             </div>
           </div>
         </div>
+
+        {/* --- New Card: Estimated Cost of Turnover --- */}
+        <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl p-5 shadow-sm border border-red-100 flex flex-col justify-between md:col-span-2">
+          <div className="flex justify-between items-start">
+            <p className="text-sm font-semibold text-red-800">Estimated Cost of Turnover</p>
+            <Banknote className="h-5 w-5 text-red-500" />
+          </div>
+          <div className="mt-3">
+            <h2 className="text-3xl font-bold text-red-700">
+              ฿{estimatedCost.toLocaleString('th-TH')}
+            </h2>
+            <p className="text-[10px] text-red-600 mt-1 bg-white/60 inline-block px-2 py-0.5 rounded-full font-medium">
+              *Estimate: 150k per Critical Role | 50k per Non-Critical
+            </p>
+          </div>
+        </div>
+
+        {/* --- New Card: Average Time-to-Fill --- */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 shadow-sm border border-blue-100 flex flex-col justify-between md:col-span-2">
+          <div className="flex justify-between items-start">
+            <p className="text-sm font-semibold text-indigo-800">Average Time-to-Fill</p>
+            <Clock className="h-5 w-5 text-indigo-500" />
+          </div>
+          <div className="mt-3">
+            <h2 className="text-3xl font-bold text-indigo-700">
+              {averageTimeToFill} <span className="text-lg font-medium text-indigo-500">Days</span>
+            </h2>
+            <p className="text-[10px] text-indigo-600 mt-1 bg-white/60 inline-block px-2 py-0.5 rounded-full font-medium">
+              Average days taken to backfill a resigned role
+            </p>
+          </div>
+        </div>
+
       </div>
 
       {/* Charts Section */}
@@ -852,14 +928,6 @@ export default function RecruitmentDashboard() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-1 relative">
           <h3 className="text-lg font-semibold mb-6 text-gray-800">สรุปสถานะการหาคนแทน (Backfill)</h3>
           
-          {/* กล่องแสดง Average Time To Fill */}
-          <div className="absolute top-6 right-6 flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm">
-            <Clock className="w-4 h-4 text-indigo-500" />
-            <div className="text-xs font-medium text-gray-600">
-              เฉลี่ย: <span className="text-sm font-bold text-indigo-700">{averageTimeToFill} วัน</span>
-            </div>
-          </div>
-
           <div className="flex justify-center items-center w-full h-[300px]">
             {backfillStats.some(s => s.value > 0) ? (
               <div className="w-full max-w-[600px] h-full">
@@ -975,17 +1043,14 @@ export default function RecruitmentDashboard() {
                       </div>
                     </td>
                     <td className="p-3 text-center">
-                      <div className="flex flex-col gap-1">
-                        <select value={editFormData.backfillStatus} onChange={e => setEditFormData({...editFormData, backfillStatus: e.target.value})} className="text-xs font-semibold rounded-md px-3 py-1.5 border border-gray-300 outline-none w-full text-center bg-white focus:ring-2 focus:ring-indigo-500">
-                          <option value="Open">เปิดรับ (Open)</option><option value="In Progress">กำลังหา (In Progress)</option><option value="Hired">ได้คนแล้ว (Hired)</option><option value="No Backfill">ยุบตำแหน่ง</option>
-                        </select>
-                        {editFormData.backfillStatus === 'Hired' && <input type="date" title="วันที่รับเข้า" className="w-full p-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 outline-none" value={editFormData.hiredDate || ''} onChange={e => setEditFormData({...editFormData, hiredDate: e.target.value})} />}
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex justify-center gap-2">
+                      <div className="flex justify-center gap-2 relative">
                         <button onClick={handleSaveEdit} className="p-1.5 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors" title="บันทึก"><Save className="w-4 h-4" /></button>
                         <button onClick={handleCancelEdit} className="p-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors" title="ยกเลิก"><X className="w-4 h-4" /></button>
+                        {editFormError && (
+                          <div className="absolute top-full mt-2 right-0 bg-red-600 text-white text-[10px] py-1 px-2 rounded shadow-lg whitespace-nowrap z-50 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> {editFormError}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
