@@ -799,22 +799,6 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        {/* --- Card: Average Time-to-Fill --- */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 shadow-sm border border-blue-100 flex flex-col justify-between md:col-span-2 lg:col-span-4">
-          <div className="flex justify-between items-start">
-            <p className="text-sm font-semibold text-indigo-800">Average Time-to-Fill</p>
-            <Clock className="h-5 w-5 text-indigo-500" />
-          </div>
-          <div className="mt-3">
-            <h2 className="text-3xl font-bold text-indigo-700">
-              {averageTimeToFill} <span className="text-lg font-medium text-indigo-500">Days</span>
-            </h2>
-            <p className="text-[10px] text-indigo-600 mt-1 bg-white/60 inline-block px-2 py-0.5 rounded-full font-medium">
-              ระยะเวลาเฉลี่ย (วัน) ที่ใช้ในการหาคนแทนตำแหน่งที่ว่าง
-            </p>
-          </div>
-        </div>
-
       </div>
 
       {/* Charts Section */}
@@ -903,33 +887,15 @@ export default function RecruitmentDashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-1 relative">
-          <h3 className="text-lg font-semibold mb-6 text-gray-800">สรุปสถานะการหาคนแทน (Backfill)</h3>
-          
-          <div className="flex justify-center items-center w-full h-[300px]">
-            {backfillStats.some(s => s.value > 0) ? (
-              <div className="w-full max-w-[600px] h-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-                    <Pie data={backfillStats} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" labelLine={false} label={({ name, value }) => `${name}: ${value}`} style={{ fontSize: '11px', fontWeight: '600' }}>
-                      {backfillStats.map((entry, index) => ( 
-                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
-                      ))}
-                    </Pie>
-                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value) => [`${value} ตำแหน่ง`, 'จำนวน']} />
-                    <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีตำแหน่งว่าง</p></div>
-            )}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full relative">
+          <div className="flex justify-between items-start mb-6">
+            <h3 className="text-lg font-semibold text-gray-800">อายุงานก่อนลาออก (Tenure)</h3>
+            <div className="bg-red-50 text-red-700 text-[10px] font-semibold px-2 py-1.5 rounded-md flex items-center gap-1.5 border border-red-100 shadow-sm" title="พนักงานที่ลาออกในช่วงปีแรก">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Early Attrition (&lt; 1 ปี): <span className="text-sm">{tenureStats.find(t => t.tenure === '< 1 ปี')?.count || 0}</span> คน
+            </div>
           </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-1">
-          <h3 className="text-lg font-semibold mb-6 text-gray-800">อายุงานก่อนลาออก (Tenure)</h3>
-          <div style={{ width: '100%', height: 300, minHeight: 300 }}>
+          <div style={{ width: '100%', height: 280, minHeight: 280 }}>
             {tenureStats.some(s => s.count > 0) ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={tenureStats} margin={{ top: 25, right: 20, left: -20, bottom: 5 }}>
@@ -948,6 +914,56 @@ export default function RecruitmentDashboard() {
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีข้อมูลวันที่เริ่มงาน</p></div>
             )}
+          </div>
+        </div>
+
+        {/* --- Recruitment & Backfill Overview Combo --- */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 w-full lg:col-span-2 flex flex-col md:flex-row gap-8 items-center">
+          <div className="w-full md:w-1/2">
+            <h3 className="text-lg font-semibold mb-2 text-gray-800">สรุปสถานะการหาคนแทน (Backfill)</h3>
+            <div className="flex justify-center items-center w-full h-[250px]">
+              {backfillStats.some(s => s.value > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <Pie data={backfillStats} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" labelLine={false} label={({ name, value }) => `${name}: ${value}`} style={{ fontSize: '11px', fontWeight: '600' }}>
+                      {backfillStats.map((entry, index) => ( 
+                        <Cell key={`cell-${index}`} fill={entry.fill} stroke="#ffffff" strokeWidth={2} /> 
+                      ))}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value) => [`${value} ตำแหน่ง`, 'จำนวน']} />
+                    <Legend iconType="circle" layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200"><p className="text-sm">ยังไม่มีตำแหน่งว่าง</p></div>
+              )}
+            </div>
+          </div>
+          
+          <div className="w-full md:w-1/2 flex flex-col justify-center gap-4 md:border-l border-gray-100 md:pl-8 pt-4 md:pt-0">
+            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-5 rounded-xl border border-indigo-100 shadow-sm relative overflow-hidden">
+              <div className="absolute -right-4 -bottom-4 opacity-10"><Clock className="w-24 h-24 text-indigo-500" /></div>
+              <div className="flex justify-between items-start mb-2 relative z-10">
+                <span className="text-sm font-semibold text-indigo-900">Average Time-to-Fill</span>
+                <Clock className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div className="text-4xl font-black text-indigo-700 mt-1 relative z-10">
+                {averageTimeToFill} <span className="text-lg font-bold text-indigo-500">วัน (Days)</span>
+              </div>
+              <p className="text-xs font-medium text-indigo-600/80 mt-2 relative z-10">ระยะเวลาเฉลี่ยในการหาพนักงานใหม่เข้าทดแทน</p>
+            </div>
+            
+            <div className="bg-gradient-to-br from-orange-50 to-red-50 p-5 rounded-xl border border-red-100 shadow-sm relative overflow-hidden">
+              <div className="absolute -right-4 -bottom-4 opacity-10"><Briefcase className="w-24 h-24 text-red-500" /></div>
+              <div className="flex justify-between items-start mb-2 relative z-10">
+                <span className="text-sm font-semibold text-red-900">Active Open Roles</span>
+                <Briefcase className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="text-4xl font-black text-red-700 mt-1 relative z-10">
+                {backfillStats.find(s => s.name === 'Open')?.value || 0} <span className="text-lg font-bold text-red-500">ตำแหน่ง</span>
+              </div>
+              <p className="text-xs font-medium text-red-600/80 mt-2 relative z-10">จำนวนตำแหน่งว่างทั้งหมดที่กำลังรอการสรรหา</p>
+            </div>
           </div>
         </div>
 
