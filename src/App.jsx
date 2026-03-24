@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star
+  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -537,7 +537,24 @@ export default function RecruitmentDashboard() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">ระดับความสำคัญ (Criticality)</label>
+                <div className="flex items-center gap-1 mb-1">
+                  <label className="block text-xs font-medium text-gray-600">ระดับความสำคัญ (Criticality)</label>
+                  <div className="group relative flex items-center">
+                    <Info className="w-3.5 h-3.5 text-gray-400 cursor-help hover:text-indigo-500 transition-colors" />
+                    {/* Tooltip อธิบาย Criteria ที่จะโผล่มาตอน Hover */}
+                    <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 p-3 bg-gray-800 text-white rounded-lg shadow-xl z-50 pointer-events-none">
+                      <p className="font-semibold text-xs mb-1 text-indigo-200 border-b border-gray-600 pb-1">เกณฑ์ตำแหน่ง Critical Role:</p>
+                      <ul className="list-disc pl-4 space-y-1 text-[10px] leading-relaxed">
+                        <li><span className="font-medium text-white">Revenue:</span> กระทบรายได้/เป้าหมายธุรกิจ</li>
+                        <li><span className="font-medium text-white">Niche Skill:</span> ทักษะเฉพาะ หาคนแทนยาก</li>
+                        <li><span className="font-medium text-white">Bottleneck:</span> งานส่วนอื่นสะดุดหากขาดตำแหน่งนี้</li>
+                        <li><span className="font-medium text-white">Leadership:</span> ระดับบริหาร/ผู้นำทีม</li>
+                      </ul>
+                      {/* ลูกศรชี้ลง */}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                    </div>
+                  </div>
+                </div>
                 <select value={newResign.criticality} onChange={e => setNewResign({...newResign, criticality: e.target.value})} className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
                   <option value="Non-Critical">Non-Critical Role</option>
                   <option value="Critical">🔥 Critical Role</option>
