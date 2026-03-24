@@ -327,7 +327,7 @@ export default function RecruitmentDashboard() {
           <div className="flex justify-center mb-6">
             {/* โชว์โลโก้ในหน้า Login ด้วย */}
             <img 
-              src="/logo.png" 
+              src="/https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true" 
               alt="Company Logo" 
               className="h-16 w-auto object-contain mb-2"
               onError={(e) => {
@@ -370,7 +370,7 @@ export default function RecruitmentDashboard() {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
             {/* ดึงโลโก้จากไฟล์ /logo.png ในโฟลเดอร์ public */}
             <img 
-              src="/logo.png" 
+              src="/https://github.com/wraksakwamdee-creator/turnover-dashboard/blob/main/public/logo.png?raw=true" 
               alt="Company Logo" 
               className="h-10 md:h-12 w-auto object-contain"
               onError={(e) => {
