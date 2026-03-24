@@ -697,12 +697,12 @@ export default function RecruitmentDashboard() {
         
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col justify-between">
           <div className="flex justify-between items-start">
-            <p className="text-xs font-medium text-gray-500">Beginning HC</p>
+            <p className="text-xs font-medium text-gray-500">Beginning HC (Jan 2026)</p>
             <Users className="h-4 w-4 text-gray-400" />
           </div>
           <div className="mt-2">
             <h2 className="text-2xl font-bold text-gray-900">{INITIAL_HEADCOUNT} <span className="text-sm font-normal text-gray-500">คน</span></h2>
-            <p className="text-[10px] text-gray-600 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-full">ฐานตั้งต้น</p>
+            <p className="text-[10px] text-gray-600 mt-1 bg-gray-100 inline-block px-2 py-0.5 rounded-full">ฐานตั้งต้น (Jan 2026)</p>
           </div>
         </div>
 
