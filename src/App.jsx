@@ -379,23 +379,47 @@ export default function RecruitmentDashboard() {
     await deleteDoc(doc(db, companyDataId, 'public', 'resignations', itemToDelete)); setItemToDelete(null);
   };
 
-  // --- ข้อมูลสำหรับแสดงในตาราง (ผ่าน Filter และ Search) ---
+  // --- ข้อมูลสำหรับแสดงในตาราง (ผ่าน Filter และ Search พร้อมเรียงลำดับตามวันที่) ---
   const searchedResignations = useMemo(() => {
-    if (!searchTerm) return processedResignations; 
-    const term = searchTerm.toLowerCase();
-    return processedResignations.filter(person => 
-      (person.name && person.name.toLowerCase().includes(term)) || 
-      (person.department && person.department.toLowerCase().includes(term))
-    );
+    let filtered = [...processedResignations];
+    
+    // ค้นหาตามชื่อหรือแผนก
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(person => 
+        (person.name && person.name.toLowerCase().includes(term)) || 
+        (person.department && person.department.toLowerCase().includes(term))
+      );
+    }
+    
+    // บังคับเรียงลำดับตามวันที่ Effective Date (จากใหม่ล่าสุด ไป เก่าสุด)
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.date || 0);
+      const dateB = new Date(b.date || 0);
+      return dateB - dateA;
+    });
   }, [processedResignations, searchTerm]);
 
   // --- ระบบแบ่งหน้าตาราง (Pagination) ---
   const totalPages = Math.ceil(searchedResignations.length / itemsPerPage) || 1;
   const paginatedResignations = useMemo(() => {
-    const reversed = [...searchedResignations].reverse();
+    // ไม่ต้อง reverse แล้ว เพราะข้อมูลถูกเรียงมาแล้วจาก searchedResignations
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return reversed.slice(startIndex, startIndex + itemsPerPage);
+    return searchedResignations.slice(startIndex, startIndex + itemsPerPage);
   }, [searchedResignations, currentPage]);
+
+  // --- จัดเรียงประวัติการรับเข้าตาม ปี และ เดือน ---
+  const sortedHires = useMemo(() => {
+    return [...hires].sort((a, b) => {
+      const yearA = parseInt(a.year || '2026', 10);
+      const yearB = parseInt(b.year || '2026', 10);
+      if (yearA !== yearB) return yearB - yearA; // เรียงปีใหม่สุดขึ้นก่อน
+      
+      const monthA = MONTHS.indexOf(a.month);
+      const monthB = MONTHS.indexOf(b.month);
+      return monthB - monthA; // เรียงเดือนล่าสุดขึ้นก่อน
+    });
+  }, [hires]);
 
   const handleExportCSV = () => {
     if (processedResignations.length === 0) return;
@@ -667,8 +691,8 @@ export default function RecruitmentDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {hires.length > 0 ? (
-                    hires.slice().reverse().map(h => (
+                  {sortedHires.length > 0 ? (
+                    sortedHires.map(h => (
                       <tr key={h.id} className="border-b last:border-b-0 hover:bg-gray-50">
                         <td className="p-2 font-medium">{h.year || '2026'}</td>
                         <td className="p-2 font-medium">{h.month}</td>
