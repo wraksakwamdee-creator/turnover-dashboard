@@ -4,7 +4,7 @@ import {
 } from 'recharts';
 import { 
   Users, UserMinus, AlertCircle, CheckCircle, TrendingUp, Plus, UserPlus, Briefcase, Search,
-  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info
+  Edit2, Trash2, Save, X, Download, LogOut, Lock, Filter, ChevronLeft, ChevronRight, Clock, Star, Info, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 // --- โหลด Tailwind CSS อัตโนมัติ ---
@@ -112,11 +112,18 @@ export default function RecruitmentDashboard() {
   const [showResignForm, setShowResignForm] = useState(false);
   const [newResign, setNewResign] = useState(initialResignState);
   const [showHireForm, setShowHireForm] = useState(false);
-  const [newHire, setNewHire] = useState({ month: 'Jan', year: new Date().getFullYear().toString(), count: 1 });
+  
+  // 🔴 เปลี่ยน state ของฟอร์มรับเข้าใหม่ เพื่อรองรับการเพิ่มหลายรายการ (Dynamic Rows)
+  const [newHire, setNewHire] = useState({ month: 'Jan', year: new Date().getFullYear().toString() });
+  const [hireEntries, setHireEntries] = useState([{ name: '', department: '', count: 1 }]);
+  
+  // 🔴 เพิ่ม State สำหรับจัดการการ กาง/หุบ ตารางรับเข้า
+  const [expandedHireGroups, setExpandedHireGroups] = useState(new Set());
   
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
+  const [hireToDelete, setHireToDelete] = useState(null); // 🔴 เพิ่ม State เก็บ id สำหรับลบข้อมูลรับเข้า
   
   // States สำหรับ ตัวกรอง และ ค้นหา และ แบ่งหน้าตาราง
   const [filterYear, setFilterYear] = useState('All');
@@ -296,6 +303,21 @@ export default function RecruitmentDashboard() {
     return Math.round(totalDays / hiredRoles.length);
   }, [processedResignations]);
 
+  // --- ฟังก์ชันจัดการ Dynamic Rows สำหรับฟอร์มรับเข้า ---
+  const handleAddHireRow = () => {
+    setHireEntries([...hireEntries, { name: '', department: '', count: 1 }]);
+  };
+
+  const handleRemoveHireRow = (index) => {
+    setHireEntries(hireEntries.filter((_, i) => i !== index));
+  };
+
+  const handleHireEntryChange = (index, field, value) => {
+    const newEntries = [...hireEntries];
+    newEntries[index][field] = value;
+    setHireEntries(newEntries);
+  };
+
   // --- 3. ฟังก์ชันบันทึกข้อมูล ---
   const handleAddResignation = async (e) => {
     e.preventDefault(); if (!user || !newResign.name || !newResign.date) return;
@@ -321,13 +343,28 @@ export default function RecruitmentDashboard() {
   const handleAddHire = async (e) => {
     e.preventDefault(); if (!user) return;
     try {
-      await addDoc(collection(db, companyDataId, 'public', 'hires'), newHire);
-      setNewHire({ ...newHire, count: 1 });
-    } catch (error) { console.error("Error adding document: ", error); }
+      // 🔴 บันทึกข้อมูลพนักงานใหม่ทุกคนใน Array พร้อมๆ กัน
+      const promises = hireEntries.map(entry => {
+        return addDoc(collection(db, companyDataId, 'public', 'hires'), {
+          year: newHire.year,
+          month: newHire.month,
+          name: entry.name,
+          department: entry.department,
+          count: Number(entry.count) || 1
+        });
+      });
+      await Promise.all(promises);
+      
+      // เคลียร์ช่องกรอกรายชื่อให้กลับมาเป็น 1 ช่องว่างๆ หลังกดบันทึกสำเร็จ
+      setHireEntries([{ name: '', department: '', count: 1 }]);
+    } catch (error) { console.error("Error adding documents: ", error); }
   };
 
-  const handleDeleteHire = async (id) => {
-    if (!user) return; await deleteDoc(doc(db, companyDataId, 'public', 'hires', id));
+  // 🔴 เปลี่ยนฟังก์ชันลบข้อมูลรับเข้า ให้ไปทำงานผ่าน Modal ยืนยันก่อน
+  const confirmDeleteHire = async () => {
+    if (!user || !hireToDelete) return; 
+    await deleteDoc(doc(db, companyDataId, 'public', 'hires', hireToDelete));
+    setHireToDelete(null);
   };
 
   const handleStatusChange = async (person, newStatus) => {
@@ -408,18 +445,36 @@ export default function RecruitmentDashboard() {
     return searchedResignations.slice(startIndex, startIndex + itemsPerPage);
   }, [searchedResignations, currentPage]);
 
-  // --- จัดเรียงประวัติการรับเข้าตาม ปี และ เดือน ---
-  const sortedHires = useMemo(() => {
-    return [...hires].sort((a, b) => {
-      const yearA = parseInt(a.year || '2026', 10);
-      const yearB = parseInt(b.year || '2026', 10);
-      if (yearA !== yearB) return yearB - yearA; // เรียงปีใหม่สุดขึ้นก่อน
+  // --- 🔴 จัดกลุ่มและเรียงประวัติการรับเข้าตาม ปี และ เดือน ---
+  const groupedHires = useMemo(() => {
+    const groups = {};
+    hires.forEach(h => {
+      const key = `${h.year || '2026'}-${h.month}`;
+      if (!groups[key]) {
+        groups[key] = { year: h.year || '2026', month: h.month, totalCount: 0, entries: [] };
+      }
+      groups[key].totalCount += Number(h.count || 0);
+      groups[key].entries.push(h);
+    });
+
+    // แปลงเป็น Array และเรียงลำดับ ปีล่าสุด > เดือนล่าสุด
+    return Object.values(groups).sort((a, b) => {
+      const yearA = parseInt(a.year, 10);
+      const yearB = parseInt(b.year, 10);
+      if (yearA !== yearB) return yearB - yearA; 
       
       const monthA = MONTHS.indexOf(a.month);
       const monthB = MONTHS.indexOf(b.month);
-      return monthB - monthA; // เรียงเดือนล่าสุดขึ้นก่อน
+      return monthB - monthA; 
     });
   }, [hires]);
+
+  const toggleHireGroup = (key) => {
+    const newSet = new Set(expandedHireGroups);
+    if (newSet.has(key)) newSet.delete(key);
+    else newSet.add(key);
+    setExpandedHireGroups(newSet);
+  };
 
   const handleExportCSV = () => {
     if (processedResignations.length === 0) return;
@@ -653,57 +708,115 @@ export default function RecruitmentDashboard() {
       )}
 
       {showHireForm && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-green-200 mb-8 flex flex-col md:flex-row gap-8">
-          <div className="flex-1 border-b md:border-b-0 md:border-r border-gray-200 pb-6 md:pb-0 md:pr-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-green-200 mb-8 flex flex-col xl:flex-row gap-8">
+          <div className="flex-1 border-b xl:border-b-0 xl:border-r border-gray-200 pb-6 xl:pb-0 xl:pr-6">
             <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า (Add Hires)</h3>
             <form onSubmit={handleAddHire} className="flex flex-col gap-4">
-              <div className="flex gap-4">
+              
+              <div className="flex gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 mb-1">ปี</label>
                   <input type="number" required value={newHire.year} onChange={e => setNewHire({...newHire, year: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">เดือน</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">เดือนที่รับเข้า</label>
                   <select value={newHire.month} onChange={e => setNewHire({...newHire, month: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">จำนวนคน</label>
-                  <input type="number" min="1" required value={newHire.count} onChange={e => setNewHire({...newHire, count: e.target.value})} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
               </div>
-              <button type="submit" className="w-full py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 shadow-sm mt-2">บันทึกพนักงานใหม่</button>
-              <button type="button" onClick={() => setShowHireForm(false)} className="w-full py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">ปิดหน้าต่าง</button>
+
+              <div className="flex flex-col gap-3">
+                <label className="block text-xs font-semibold text-gray-800 border-b pb-1">รายชื่อพนักงานที่รับเข้าในเดือนนี้</label>
+                {hireEntries.map((entry, index) => (
+                  <div key={index} className="flex flex-col md:flex-row gap-2 items-start md:items-center bg-gray-50 p-3 md:bg-transparent md:p-0 rounded-lg">
+                    <div className="w-full md:flex-[2]">
+                      <input type="text" value={entry.name} onChange={e => handleHireEntryChange(index, 'name', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="ชื่อ-นามสกุล (ไม่บังคับ)" />
+                    </div>
+                    <div className="w-full md:flex-[1.5]">
+                      <input type="text" value={entry.department} onChange={e => handleHireEntryChange(index, 'department', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="แผนก (ไม่บังคับ)" />
+                    </div>
+                    <div className="w-full md:flex-[1] flex items-center gap-2">
+                      <input type="number" min="1" required value={entry.count} onChange={e => handleHireEntryChange(index, 'count', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" title="จำนวนคน" placeholder="จำนวน" />
+                      {hireEntries.length > 1 ? (
+                        <button type="button" onClick={() => handleRemoveHireRow(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-md transition-colors" title="ลบรายการนี้">
+                          <X className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <div className="w-8 hidden md:block"></div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={handleAddHireRow} className="flex items-center justify-center gap-1 text-xs text-indigo-600 font-semibold hover:text-indigo-700 w-full md:w-fit mt-1 px-3 py-2 border border-dashed border-indigo-300 rounded-md hover:bg-indigo-50 transition-colors">
+                  <Plus className="w-4 h-4" /> เพิ่มพนักงานอีก
+                </button>
+              </div>
+
+              <div className="flex gap-2 mt-2 pt-4 border-t border-gray-100">
+                <button type="button" onClick={() => setShowHireForm(false)} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">ปิด</button>
+                <button type="submit" className="flex-1 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 shadow-sm transition-colors">บันทึกข้อมูลรับเข้า ({hireEntries.length} รายการ)</button>
+              </div>
             </form>
           </div>
 
-          <div className="flex-1">
+          <div className="flex-[1.5]">
             <h3 className="text-sm font-semibold mb-4 text-gray-800 bg-gray-100 p-2 rounded-md">ประวัติการเพิ่มข้อมูลรับเข้า (Manage)</h3>
-            <div className="max-h-[200px] overflow-y-auto border border-gray-100 rounded-md">
+            <div className="max-h-[350px] overflow-y-auto border border-gray-100 rounded-md">
               <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0">
+                <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0 shadow-sm z-10">
                   <tr>
-                    <th className="p-2 border-b">ปี</th>
-                    <th className="p-2 border-b">เดือน</th>
-                    <th className="p-2 border-b">จำนวน (คน)</th>
-                    <th className="p-2 border-b text-center">ลบ</th>
+                    <th className="p-2 border-b w-8"></th>
+                    <th className="p-2 border-b">ข้อมูล / รายชื่อ</th>
+                    <th className="p-2 border-b text-center">จำนวน (คน)</th>
+                    <th className="p-2 border-b text-center w-20">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedHires.length > 0 ? (
-                    sortedHires.map(h => (
-                      <tr key={h.id} className="border-b last:border-b-0 hover:bg-gray-50">
-                        <td className="p-2 font-medium">{h.year || '2026'}</td>
-                        <td className="p-2 font-medium">{h.month}</td>
-                        <td className="p-2 text-green-600 font-semibold">+{h.count}</td>
-                        <td className="p-2 text-center">
-                          <button onClick={() => handleDeleteHire(h.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors" title="ลบข้อมูล">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                  {groupedHires.length > 0 ? (
+                    groupedHires.map(group => {
+                      const key = `${group.year}-${group.month}`;
+                      const isExpanded = expandedHireGroups.has(key);
+                      
+                      return (
+                        <React.Fragment key={key}>
+                          {/* บรรทัดหลัก (เดือน/ปี) - คลิกเพื่อกาง/หุบ */}
+                          <tr onClick={() => toggleHireGroup(key)} className="border-b bg-indigo-50/40 hover:bg-indigo-50 cursor-pointer group transition-colors">
+                            <td className="p-2 text-center text-indigo-400 group-hover:text-indigo-600">
+                              {isExpanded ? <ChevronUp className="w-4 h-4 inline-block" /> : <ChevronDown className="w-4 h-4 inline-block" />}
+                            </td>
+                            <td className="p-2 font-bold text-gray-800">{group.month} {group.year}</td>
+                            <td className="p-2 text-green-700 font-bold text-center">+{group.totalCount}</td>
+                            <td className="p-2 text-center">
+                              <span className="text-[10px] bg-white border border-gray-200 text-gray-600 px-2 py-1 rounded-md shadow-sm whitespace-nowrap">
+                                {group.entries.length} รายการ
+                              </span>
+                            </td>
+                          </tr>
+                          
+                          {/* บรรทัดย่อย (รายชื่อพนักงาน) - แสดงเมื่อกางออกเท่านั้น */}
+                          {isExpanded && group.entries.map((h, i) => (
+                            <tr key={h.id} className={`bg-white hover:bg-gray-50 ${i === group.entries.length - 1 ? 'border-b-2 border-gray-200' : 'border-b border-gray-100'}`}>
+                              <td className="p-2 border-r border-gray-50"></td>
+                              <td className="p-2 py-2.5 pl-4">
+                                <div className="font-medium text-gray-800 text-sm flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                                  {h.name || <span className="text-gray-400 italic">ไม่ระบุชื่อ</span>}
+                                </div>
+                                {h.department && <div className="text-[10px] text-gray-500 ml-3.5 mt-0.5">แผนก: {h.department}</div>}
+                              </td>
+                              <td className="p-2 text-green-600 font-semibold text-center text-xs">+{h.count}</td>
+                              <td className="p-2 text-center">
+                                {/* 🔴 เปลี่ยนคำสั่ง onClick ให้เรียก Modal แทนการลบทันที */}
+                                <button onClick={() => setHireToDelete(h.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors" title="ลบข้อมูล">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan="4" className="p-4 text-center text-xs text-gray-400">ยังไม่มีประวัติการรับเข้า</td>
@@ -1137,7 +1250,7 @@ export default function RecruitmentDashboard() {
         )}
       </div>
 
-      {/* Pop-up Modal สำหรับยืนยันการลบ */}
+      {/* Pop-up Modal สำหรับยืนยันการลบข้อมูล (ลาออก) */}
       {itemToDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-in fade-in">
           <div className="bg-white p-6 rounded-xl shadow-xl max-w-sm w-full mx-4">
@@ -1146,6 +1259,22 @@ export default function RecruitmentDashboard() {
             <div className="flex justify-end gap-3">
               <button onClick={() => setItemToDelete(null)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={confirmDelete} className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">ลบข้อมูล</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔴 Pop-up Modal สำหรับยืนยันการลบข้อมูล (รับเข้า) */}
+      {hireToDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-in fade-in">
+          <div className="bg-white p-6 rounded-xl shadow-xl max-w-sm w-full mx-4 border-t-4 border-red-500">
+            <h3 className="text-lg font-bold mb-2 text-gray-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-500" /> ยืนยันการลบประวัติรับเข้า
+            </h3>
+            <p className="text-gray-600 text-sm mb-6">คุณต้องการลบประวัติการรับเข้าของพนักงานท่านนี้ใช่หรือไม่? ตัวเลขพนักงานรับเข้าสะสมจะถูกหักออกทันที</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setHireToDelete(null)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">ยกเลิก</button>
+              <button onClick={confirmDeleteHire} className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm">ลบข้อมูล</button>
             </div>
           </div>
         </div>
