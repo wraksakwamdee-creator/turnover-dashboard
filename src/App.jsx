@@ -113,9 +113,9 @@ export default function RecruitmentDashboard() {
   const [newResign, setNewResign] = useState(initialResignState);
   const [showHireForm, setShowHireForm] = useState(false);
   
-  // 🔴 เปลี่ยน state ของฟอร์มรับเข้าใหม่ เพื่อรองรับการเพิ่มหลายรายการ (Dynamic Rows)
+  // 🔴 เปลี่ยน state ของฟอร์มรับเข้าใหม่ เพื่อรองรับการเพิ่มหลายรายการและฟิลด์ใหม่
   const [newHire, setNewHire] = useState({ month: 'Jan', year: new Date().getFullYear().toString() });
-  const [hireEntries, setHireEntries] = useState([{ name: '', department: '', count: 1 }]);
+  const [hireEntries, setHireEntries] = useState([{ name: '', position: '', department: '', company: 'PCHI', joinDate: '', count: 1 }]);
   
   // 🔴 เพิ่ม State สำหรับจัดการการ กาง/หุบ ตารางรับเข้า
   const [expandedHireGroups, setExpandedHireGroups] = useState(new Set());
@@ -123,7 +123,11 @@ export default function RecruitmentDashboard() {
   const [editingId, setEditingId] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [itemToDelete, setItemToDelete] = useState(null);
-  const [hireToDelete, setHireToDelete] = useState(null); // 🔴 เพิ่ม State เก็บ id สำหรับลบข้อมูลรับเข้า
+  const [hireToDelete, setHireToDelete] = useState(null); // เพิ่ม State เก็บ id สำหรับลบข้อมูลรับเข้า
+  
+  // 🔴 เพิ่ม State สำหรับจัดการการแก้ไขข้อมูล "รับเข้า"
+  const [editingHireId, setEditingHireId] = useState(null);
+  const [editHireFormData, setEditHireFormData] = useState({});
   
   // States สำหรับ ตัวกรอง และ ค้นหา และ แบ่งหน้าตาราง
   const [filterYear, setFilterYear] = useState('All');
@@ -305,7 +309,7 @@ export default function RecruitmentDashboard() {
 
   // --- ฟังก์ชันจัดการ Dynamic Rows สำหรับฟอร์มรับเข้า ---
   const handleAddHireRow = () => {
-    setHireEntries([...hireEntries, { name: '', department: '', count: 1 }]);
+    setHireEntries([...hireEntries, { name: '', position: '', department: '', company: 'PCHI', joinDate: '', count: 1 }]);
   };
 
   const handleRemoveHireRow = (index) => {
@@ -343,24 +347,58 @@ export default function RecruitmentDashboard() {
   const handleAddHire = async (e) => {
     e.preventDefault(); if (!user) return;
     try {
-      // 🔴 บันทึกข้อมูลพนักงานใหม่ทุกคนใน Array พร้อมๆ กัน
+      // บันทึกข้อมูลพนักงานใหม่ทุกคนใน Array พร้อมๆ กัน (รวมฟิลด์ใหม่)
       const promises = hireEntries.map(entry => {
         return addDoc(collection(db, companyDataId, 'public', 'hires'), {
           year: newHire.year,
           month: newHire.month,
           name: entry.name,
+          position: entry.position,
           department: entry.department,
+          company: entry.company,
+          joinDate: entry.joinDate,
           count: Number(entry.count) || 1
         });
       });
       await Promise.all(promises);
       
       // เคลียร์ช่องกรอกรายชื่อให้กลับมาเป็น 1 ช่องว่างๆ หลังกดบันทึกสำเร็จ
-      setHireEntries([{ name: '', department: '', count: 1 }]);
+      setHireEntries([{ name: '', position: '', department: '', company: 'PCHI', joinDate: '', count: 1 }]);
     } catch (error) { console.error("Error adding documents: ", error); }
   };
 
-  // 🔴 เปลี่ยนฟังก์ชันลบข้อมูลรับเข้า ให้ไปทำงานผ่าน Modal ยืนยันก่อน
+  // 🔴 เพิ่มฟังก์ชันสำหรับการแก้ไขข้อมูลรับเข้า
+  const handleEditHireClick = (hire) => {
+    setEditingHireId(hire.id);
+    setEditHireFormData({
+      ...hire,
+      name: hire.name || '',
+      position: hire.position || '',
+      department: hire.department || '',
+      company: hire.company || 'PCHI',
+      joinDate: hire.joinDate || '',
+      year: hire.year || new Date().getFullYear().toString(),
+      month: hire.month || 'Jan',
+      count: hire.count || 1
+    });
+  };
+
+  const handleSaveHireEdit = async () => {
+    if (!user || !editingHireId) return;
+    try {
+      const { id, ...updateData } = editHireFormData;
+      updateData.count = Number(updateData.count) || 1;
+      await updateDoc(doc(db, companyDataId, 'public', 'hires', editingHireId), updateData);
+      setEditingHireId(null);
+    } catch (error) { console.error("Error updating hire document: ", error); }
+  };
+
+  const handleCancelHireEdit = () => {
+    setEditingHireId(null);
+    setEditHireFormData({});
+  };
+
+  // เปลี่ยนฟังก์ชันลบข้อมูลรับเข้า ให้ไปทำงานผ่าน Modal ยืนยันก่อน
   const confirmDeleteHire = async () => {
     if (!user || !hireToDelete) return; 
     await deleteDoc(doc(db, companyDataId, 'public', 'hires', hireToDelete));
@@ -709,17 +747,17 @@ export default function RecruitmentDashboard() {
 
       {showHireForm && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-green-200 mb-8 flex flex-col xl:flex-row gap-8">
-          <div className="flex-1 border-b xl:border-b-0 xl:border-r border-gray-200 pb-6 xl:pb-0 xl:pr-6">
-            <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตจำนวนรับเข้า (Add Hires)</h3>
+          <div className="flex-[1.8] border-b xl:border-b-0 xl:border-r border-gray-200 pb-6 xl:pb-0 xl:pr-6">
+            <h3 className="text-lg font-semibold mb-4 text-gray-800 border-b pb-2">อัปเดตข้อมูลพนักงานรับเข้าใหม่ (Add Hires)</h3>
             <form onSubmit={handleAddHire} className="flex flex-col gap-4">
               
               <div className="flex gap-4 p-3 bg-gray-50 rounded-lg border border-gray-100 mb-2">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">ปี</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">ปี (Year)</label>
                   <input type="number" required value={newHire.year} onChange={e => setNewHire({...newHire, year: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">เดือนที่รับเข้า</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">เดือนที่รับเข้า (Month)</label>
                   <select value={newHire.month} onChange={e => setNewHire({...newHire, month: e.target.value})} className="w-full p-2 border rounded-md text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500">
                     {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
@@ -727,49 +765,74 @@ export default function RecruitmentDashboard() {
               </div>
 
               <div className="flex flex-col gap-3">
-                <label className="block text-xs font-semibold text-gray-800 border-b pb-1">รายชื่อพนักงานที่รับเข้าในเดือนนี้</label>
+                <div className="flex justify-between items-end border-b pb-1">
+                  <label className="block text-xs font-semibold text-gray-800">รายชื่อพนักงานที่รับเข้าในเดือนนี้</label>
+                  <span className="text-[10px] text-gray-500">*หากเพิ่มทีละหลายคนโดยไม่ระบุชื่อ ให้ใส่เฉพาะจำนวนคน</span>
+                </div>
+                
                 {hireEntries.map((entry, index) => (
-                  <div key={index} className="flex flex-col md:flex-row gap-2 items-start md:items-center bg-gray-50 p-3 md:bg-transparent md:p-0 rounded-lg">
-                    <div className="w-full md:flex-[2]">
-                      <input type="text" value={entry.name} onChange={e => handleHireEntryChange(index, 'name', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="ชื่อ-นามสกุล (ไม่บังคับ)" />
-                    </div>
-                    <div className="w-full md:flex-[1.5]">
-                      <input type="text" value={entry.department} onChange={e => handleHireEntryChange(index, 'department', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="แผนก (ไม่บังคับ)" />
-                    </div>
-                    <div className="w-full md:flex-[1] flex items-center gap-2">
-                      <input type="number" min="1" required value={entry.count} onChange={e => handleHireEntryChange(index, 'count', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" title="จำนวนคน" placeholder="จำนวน" />
-                      {hireEntries.length > 1 ? (
-                        <button type="button" onClick={() => handleRemoveHireRow(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-md transition-colors" title="ลบรายการนี้">
-                          <X className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <div className="w-8 hidden md:block"></div>
-                      )}
+                  <div key={index} className="flex flex-col gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100 relative shadow-sm">
+                    {/* ปุ่มลบรายการ (แสดงเมื่อมีมากกว่า 1 รายการ) */}
+                    {hireEntries.length > 1 && (
+                      <button type="button" onClick={() => handleRemoveHireRow(index)} className="absolute top-2 right-2 p-1.5 text-red-500 bg-white hover:bg-red-50 rounded-md transition-colors border border-red-100 shadow-sm z-10" title="ลบรายการนี้">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">ชื่อ-นามสกุล</label>
+                        <input type="text" value={entry.name} onChange={e => handleHireEntryChange(index, 'name', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="ระบุชื่อ (ถ้ามี)" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">ตำแหน่ง (Position)</label>
+                        <input type="text" value={entry.position} onChange={e => handleHireEntryChange(index, 'position', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="เช่น Sales Executive" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">แผนก (Department)</label>
+                        <input type="text" value={entry.department} onChange={e => handleHireEntryChange(index, 'department', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white" placeholder="เช่น Sales" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">บริษัท (Company)</label>
+                        <select value={entry.company} onChange={e => handleHireEntryChange(index, 'company', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium">
+                          <option value="PCHI">PCHI</option>
+                          <option value="MSS">MSS</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">วันที่เริ่มงาน (Join Date)</label>
+                        <input type="date" value={entry.joinDate} onChange={e => handleHireEntryChange(index, 'joinDate', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wider">จำนวนพนักงาน (Count)</label>
+                        <input type="number" min="1" required value={entry.count} onChange={e => handleHireEntryChange(index, 'count', e.target.value)} className="w-full p-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-semibold text-green-700" title="จำนวนคน" />
+                      </div>
                     </div>
                   </div>
                 ))}
-                <button type="button" onClick={handleAddHireRow} className="flex items-center justify-center gap-1 text-xs text-indigo-600 font-semibold hover:text-indigo-700 w-full md:w-fit mt-1 px-3 py-2 border border-dashed border-indigo-300 rounded-md hover:bg-indigo-50 transition-colors">
-                  <Plus className="w-4 h-4" /> เพิ่มพนักงานอีก
+                
+                <button type="button" onClick={handleAddHireRow} className="flex items-center justify-center gap-1 text-xs text-indigo-600 font-semibold hover:text-indigo-700 w-full mt-1 px-3 py-2.5 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors bg-white">
+                  <Plus className="w-4 h-4" /> เพิ่มรายชื่อพนักงานคนต่อไป
                 </button>
               </div>
 
               <div className="flex gap-2 mt-2 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setShowHireForm(false)} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">ปิด</button>
+                <button type="button" onClick={() => setShowHireForm(false)} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">ปิดหน้าต่าง</button>
                 <button type="submit" className="flex-1 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 shadow-sm transition-colors">บันทึกข้อมูลรับเข้า ({hireEntries.length} รายการ)</button>
               </div>
             </form>
           </div>
 
-          <div className="flex-[1.5]">
+          <div className="flex-[1.2]">
             <h3 className="text-sm font-semibold mb-4 text-gray-800 bg-gray-100 p-2 rounded-md">ประวัติการเพิ่มข้อมูลรับเข้า (Manage)</h3>
-            <div className="max-h-[350px] overflow-y-auto border border-gray-100 rounded-md">
+            <div className="max-h-[500px] overflow-y-auto border border-gray-100 rounded-md">
               <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0 shadow-sm z-10">
                   <tr>
                     <th className="p-2 border-b w-8"></th>
                     <th className="p-2 border-b">ข้อมูล / รายชื่อ</th>
-                    <th className="p-2 border-b text-center">จำนวน (คน)</th>
-                    <th className="p-2 border-b text-center w-20">จัดการ</th>
+                    <th className="p-2 border-b text-center">จำนวน</th>
+                    <th className="p-2 border-b text-center w-24">จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -796,23 +859,73 @@ export default function RecruitmentDashboard() {
                           
                           {/* บรรทัดย่อย (รายชื่อพนักงาน) - แสดงเมื่อกางออกเท่านั้น */}
                           {isExpanded && group.entries.map((h, i) => (
-                            <tr key={h.id} className={`bg-white hover:bg-gray-50 ${i === group.entries.length - 1 ? 'border-b-2 border-gray-200' : 'border-b border-gray-100'}`}>
-                              <td className="p-2 border-r border-gray-50"></td>
-                              <td className="p-2 py-2.5 pl-4">
-                                <div className="font-medium text-gray-800 text-sm flex items-center gap-2">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-                                  {h.name || <span className="text-gray-400 italic">ไม่ระบุชื่อ</span>}
-                                </div>
-                                {h.department && <div className="text-[10px] text-gray-500 ml-3.5 mt-0.5">แผนก: {h.department}</div>}
-                              </td>
-                              <td className="p-2 text-green-600 font-semibold text-center text-xs">+{h.count}</td>
-                              <td className="p-2 text-center">
-                                {/* 🔴 เปลี่ยนคำสั่ง onClick ให้เรียก Modal แทนการลบทันที */}
-                                <button onClick={() => setHireToDelete(h.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors" title="ลบข้อมูล">
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
+                            editingHireId === h.id ? (
+                              /* --- 🔴 โหมดแก้ไข (Edit Mode) --- */
+                              <tr key={`edit-${h.id}`} className={`bg-indigo-50/30 ${i === group.entries.length - 1 ? 'border-b-2 border-gray-200' : 'border-b border-gray-100'}`}>
+                                <td className="p-2 border-r border-gray-50"></td>
+                                <td className="p-2 py-3 pl-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                                    <input type="text" placeholder="ชื่อ-นามสกุล" value={editHireFormData.name} onChange={e => setEditHireFormData({...editHireFormData, name: e.target.value})} className="w-full p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                    <div className="flex gap-2">
+                                      <select value={editHireFormData.company} onChange={e => setEditHireFormData({...editHireFormData, company: e.target.value})} className="w-1/3 p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                        <option value="PCHI">PCHI</option>
+                                        <option value="MSS">MSS</option>
+                                      </select>
+                                      <input type="text" placeholder="ตำแหน่ง" value={editHireFormData.position} onChange={e => setEditHireFormData({...editHireFormData, position: e.target.value})} className="w-2/3 p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                    </div>
+                                    <input type="text" placeholder="แผนก" value={editHireFormData.department} onChange={e => setEditHireFormData({...editHireFormData, department: e.target.value})} className="w-full p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                    <input type="date" title="วันที่เริ่มงาน" value={editHireFormData.joinDate} onChange={e => setEditHireFormData({...editHireFormData, joinDate: e.target.value})} className="w-full p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 text-gray-600 bg-white" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <select value={editHireFormData.month} onChange={e => setEditHireFormData({...editHireFormData, month: e.target.value})} className="w-1/2 p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                      {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                    <input type="number" placeholder="ปี" value={editHireFormData.year} onChange={e => setEditHireFormData({...editHireFormData, year: e.target.value})} className="w-1/2 p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                                  </div>
+                                </td>
+                                <td className="p-2 align-top pt-4 text-center">
+                                  <input type="number" min="1" value={editHireFormData.count} onChange={e => setEditHireFormData({...editHireFormData, count: e.target.value})} className="w-14 p-1.5 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 text-center font-bold text-green-700 mx-auto block bg-white" />
+                                </td>
+                                <td className="p-2 text-center align-top pt-3">
+                                  <div className="flex justify-center gap-1.5">
+                                    <button onClick={handleSaveHireEdit} className="p-1.5 bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition-colors" title="บันทึก"><Save className="w-3.5 h-3.5" /></button>
+                                    <button onClick={handleCancelHireEdit} className="p-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors" title="ยกเลิก"><X className="w-3.5 h-3.5" /></button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : (
+                              /* --- โหมดแสดงผลปกติ (Read Mode) --- */
+                              <tr key={h.id} className={`bg-white hover:bg-gray-50 ${i === group.entries.length - 1 ? 'border-b-2 border-gray-200' : 'border-b border-gray-100'}`}>
+                                <td className="p-2 border-r border-gray-50"></td>
+                                <td className="p-2 py-3 pl-4">
+                                  <div className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                                    {h.name || <span className="text-gray-400 italic">ไม่ระบุชื่อ</span>}
+                                    {h.company && (
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${h.company === 'MSS' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        {h.company}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 ml-3.5 mt-1 grid grid-cols-1 gap-0.5">
+                                    <div><span className="font-medium">ต/น:</span> {h.position || '-'} | <span className="font-medium">แผนก:</span> {h.department || '-'}</div>
+                                    {h.joinDate && <div><span className="font-medium">เริ่มงาน:</span> {h.joinDate}</div>}
+                                  </div>
+                                </td>
+                                <td className="p-2 text-green-600 font-semibold text-center text-xs align-top pt-3">+{h.count}</td>
+                                <td className="p-2 text-center align-top pt-2">
+                                  {/* 🔴 เพิ่มปุ่ม Edit (ดินสอ) ข้างๆ ถังขยะ */}
+                                  <div className="flex justify-center gap-1.5">
+                                    <button onClick={() => handleEditHireClick(h)} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors" title="แก้ไขข้อมูล">
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button onClick={() => setHireToDelete(h.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors" title="ลบข้อมูล">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
                           ))}
                         </React.Fragment>
                       );
